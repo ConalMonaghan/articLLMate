@@ -202,6 +202,21 @@ library(yaml)          # YAML config (if used)
 
 ---
 
+## Citation
+
+If you use articLLMate in your research, please cite it:
+
+> Monaghan, C. (2026). *articLLMate* (Version 1.0) [Computer software]. https://github.com/ConalMonaghan/articLLMate
+
+Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE) — free to use, modify, and distribute with attribution.
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
