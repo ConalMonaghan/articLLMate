@@ -1,0 +1,515 @@
+---
+title: "Dimensional–Categorical Stance: Descriptive Analysis"
+author: "articLLMate"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: flatly
+    fig-width: 10
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(tidyverse)
+library(here)
+library(scales)
+library(patchwork)
+
+theme_set(
+  theme_minimal(base_size = 13) +
+    theme(
+      plot.title    = element_text(face = "bold"),
+      strip_text    = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+```
+
+# 1. Load Data
+
+Point this at your 500-article run output folder.
+
+```{r load-data}
+# ---- CHANGE THIS to your run folder name ----
+project_name <- "YOUR_PROJECT_NAME"
+
+output_dir   <- here("output", project_name)
+results_rds  <- file.path(output_dir, paste0(project_name, "_full_results.rds"))
+
+# Load the full results object (has META + RESULTS per article)
+full <- readRDS(results_rds)
+cat(sprintf("Loaded %d articles from %s\n", length(full), results_rds))
+
+# Also load the CSVs for convenience
+main_df   <- read_csv(file.path(output_dir, paste0(project_name, "_main.csv")),   show_col_types = FALSE)
+detail_df <- read_csv(file.path(output_dir, paste0(project_name, "_detail.csv")), show_col_types = FALSE)
+```
+
+## Extract publication year from META
+
+```{r extract-year}
+year_lookup <- tibble(
+  filename = names(full),
+  year = map_int(full, function(art) {
+    issued <- art$META$issued
+    if (!is.null(issued) && !is.na(issued) && nchar(issued) >= 4) {
+      return(as.integer(substr(issued, 1, 4)))
+    }
+    # Fallback: try published.print or published.online
+    for (field in c("published.print", "published.online")) {
+      val <- art$META[[field]]
+      if (!is.null(val) && !is.na(val) && nchar(val) >= 4) {
+        return(as.integer(substr(val, 1, 4)))
+      }
+    }
+    return(NA_integer_)
+  })
+)
+
+# Join year to main data
+main_df <- main_df |> left_join(year_lookup, by = "filename")
+cat(sprintf("Year available for %d / %d articles\n", sum(!is.na(main_df$year)), nrow(main_df)))
+```
+
+# 2. Sample Overview
+
+```{r sample-overview}
+status_counts <- main_df |> count(status, sort = TRUE)
+knitr::kable(status_counts, caption = "Article processing status")
+```
+
+```{r filter-processed}
+# Keep only processed + relevant articles for analysis
+df <- main_df |>
+  filter(status == "PROCESSED",
+         relevance_check_is_relevant == TRUE)
+
+cat(sprintf("Analysing %d relevant, processed articles (of %d total)\n", nrow(df), nrow(main_df)))
+```
+
+## Articles by year
+
+```{r articles-by-year}
+df |>
+  filter(!is.na(year)) |>
+  count(year) |>
+  ggplot(aes(x = year, y = n)) +
+  geom_col(fill = "#2c7fb8") +
+  labs(title = "Number of articles by publication year",
+       x = "Year", y = "Count")
+```
+
+## Articles by study design
+
+```{r by-study-design}
+df |>
+  count(study_design, sort = TRUE) |>
+  filter(study_design != "N/A") |>
+  ggplot(aes(x = reorder(study_design, n), y = n)) +
+  geom_col(fill = "#7fcdbb") +
+  coord_flip() +
+  labs(title = "Articles by study design", x = NULL, y = "Count")
+```
+
+## Articles by sample type
+
+```{r by-sample-type}
+df |>
+  count(sample_type, sort = TRUE) |>
+  filter(sample_type != "N/A") |>
+  ggplot(aes(x = reorder(sample_type, n), y = n)) +
+  geom_col(fill = "#41b6c4") +
+  coord_flip() +
+  labs(title = "Articles by sample type", x = NULL, y = "Count")
+```
+
+## Constructs examined
+
+```{r constructs}
+constructs <- detail_df |>
+  filter(detail_table == "relevance_check.psychopathologies") |>
+  select(filename, construct_label, construct_label_normalised, construct_type,
+         personality_disorder, operational_direction, theoretical_direction)
+
+cat(sprintf("%d constructs across %d articles\n",
+            nrow(constructs), n_distinct(constructs$filename)))
+
+constructs |>
+  count(construct_label_normalised, sort = TRUE) |>
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(construct_label_normalised, n), y = n)) +
+  geom_col(fill = "#253494") +
+  coord_flip() +
+  labs(title = "Top 20 psychopathology constructs",
+       x = NULL, y = "Count")
+```
+
+```{r construct-type}
+constructs |>
+  count(construct_type, sort = TRUE) |>
+  ggplot(aes(x = reorder(construct_type, n), y = n)) +
+  geom_col(fill = "#41ae76") +
+  coord_flip() +
+  labs(title = "Construct types", x = NULL, y = "Count")
+```
+
+
+# 3. Overall Classification
+
+```{r overall-classification}
+df |>
+  count(overall_classification_classification, sort = TRUE) |>
+  ggplot(aes(x = reorder(overall_classification_classification, n), y = n)) +
+  geom_col(fill = "#d95f0e") +
+  coord_flip() +
+  labs(title = "Overall classification",
+       x = NULL, y = "Count")
+```
+
+```{r classification-confidence}
+df |>
+  ggplot(aes(x = overall_classification_classification,
+             y = overall_classification_confidence)) +
+  geom_boxplot(fill = "#fec44f", alpha = 0.7) +
+  labs(title = "Classification confidence by category",
+       x = NULL, y = "Confidence (0–1)")
+```
+
+
+# 4. Dimensional vs Categorical Ratings
+
+## Theoretical stance
+
+```{r theoretical-scatter}
+df |>
+  ggplot(aes(x = theoretical_stance_categorical_rating,
+             y = theoretical_stance_dimensional_rating,
+             colour = overall_classification_classification)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  scale_colour_brewer(palette = "Set1") +
+  labs(title = "Theoretical stance: categorical vs dimensional ratings",
+       x = "Categorical rating (0–100)",
+       y = "Dimensional rating (0–100)",
+       colour = "Classification") +
+  coord_equal(xlim = c(0, 100), ylim = c(0, 100))
+```
+
+## Operational stance
+
+```{r operational-scatter}
+df |>
+  ggplot(aes(x = operational_stance_categorical_rating,
+             y = operational_stance_dimensional_rating,
+             colour = overall_classification_classification)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  scale_colour_brewer(palette = "Set1") +
+  labs(title = "Operational stance: categorical vs dimensional ratings",
+       x = "Categorical rating (0–100)",
+       y = "Dimensional rating (0–100)",
+       colour = "Classification") +
+  coord_equal(xlim = c(0, 100), ylim = c(0, 100))
+```
+
+## Theory vs operations: do they diverge?
+
+```{r theory-vs-ops}
+divergence <- df |>
+  mutate(
+    theory_net = theoretical_stance_dimensional_rating - theoretical_stance_categorical_rating,
+    ops_net    = operational_stance_dimensional_rating - operational_stance_categorical_rating
+  )
+
+divergence |>
+  ggplot(aes(x = ops_net, y = theory_net,
+             colour = overall_classification_classification)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  scale_colour_brewer(palette = "Set1") +
+  labs(title = "Theory–operations divergence",
+       subtitle = "Positive = more dimensional, Negative = more categorical",
+       x = "Operational net (dim − cat)",
+       y = "Theoretical net (dim − cat)",
+       colour = "Classification") +
+  coord_equal()
+```
+
+
+# 5. Ratings by Domain (Sampling, Data Handling, Analysis)
+
+```{r domain-ratings-long}
+domains <- df |>
+  select(filename, overall_classification_classification,
+         starts_with("methods_extraction_sampling_"),
+         starts_with("methods_extraction_data_handling_"),
+         starts_with("methods_extraction_primary_analysis_")) |>
+  pivot_longer(
+    cols = -c(filename, overall_classification_classification),
+    names_to = "field",
+    values_to = "value"
+  ) |>
+  mutate(
+    domain = case_when(
+      str_detect(field, "sampling")         ~ "Sampling",
+      str_detect(field, "data_handling")     ~ "Data Handling",
+      str_detect(field, "primary_analysis")  ~ "Analysis Technique"
+    ),
+    measure = case_when(
+      str_detect(field, "categorical_rating") ~ "Categorical",
+      str_detect(field, "dimensional_rating") ~ "Dimensional",
+      str_detect(field, "confidence")         ~ "Confidence",
+      TRUE                                    ~ "technique"
+    )
+  ) |>
+  filter(measure %in% c("Categorical", "Dimensional"))
+```
+
+```{r domain-boxplots}
+domains |>
+  ggplot(aes(x = domain, y = value, fill = measure)) +
+  geom_boxplot(alpha = 0.7, position = position_dodge(0.8)) +
+  scale_fill_manual(values = c("Categorical" = "#e41a1c", "Dimensional" = "#377eb8")) +
+  labs(title = "Categorical vs dimensional ratings by methodological domain",
+       x = NULL, y = "Rating (0–100)", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+```
+
+```{r domain-faceted}
+domains |>
+  ggplot(aes(x = value, fill = measure)) +
+  geom_histogram(bins = 20, alpha = 0.6, position = "identity") +
+  facet_wrap(~domain, scales = "free_y") +
+  scale_fill_manual(values = c("Categorical" = "#e41a1c", "Dimensional" = "#377eb8")) +
+  labs(title = "Distribution of ratings by domain",
+       x = "Rating (0–100)", y = "Count", fill = NULL)
+```
+
+
+# 6. Ratings Over Time
+
+```{r ratings-over-time}
+time_df <- df |>
+  filter(!is.na(year)) |>
+  group_by(year) |>
+  summarise(
+    n = n(),
+    mean_dim_theory = mean(theoretical_stance_dimensional_rating, na.rm = TRUE),
+    mean_cat_theory = mean(theoretical_stance_categorical_rating, na.rm = TRUE),
+    mean_dim_ops    = mean(operational_stance_dimensional_rating, na.rm = TRUE),
+    mean_cat_ops    = mean(operational_stance_categorical_rating, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n >= 3)  # only plot years with enough data
+
+time_long <- time_df |>
+  pivot_longer(starts_with("mean_"), names_to = "measure", values_to = "rating") |>
+  mutate(
+    stance   = if_else(str_detect(measure, "theory"), "Theoretical", "Operational"),
+    direction = if_else(str_detect(measure, "_dim_"), "Dimensional", "Categorical")
+  )
+
+time_long |>
+  ggplot(aes(x = year, y = rating, colour = direction, linetype = stance)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = c("Categorical" = "#e41a1c", "Dimensional" = "#377eb8")) +
+  labs(title = "Mean dimensional vs categorical ratings over time",
+       x = "Year", y = "Mean rating (0–100)",
+       colour = NULL, linetype = NULL)
+```
+
+```{r classification-over-time}
+df |>
+  filter(!is.na(year)) |>
+  count(year, overall_classification_classification) |>
+  group_by(year) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = year, y = prop, fill = overall_classification_classification)) +
+  geom_area(alpha = 0.8) +
+  scale_fill_brewer(palette = "Set1") +
+  scale_y_continuous(labels = percent) +
+  labs(title = "Classification proportions over time",
+       x = "Year", y = "Proportion", fill = "Classification")
+```
+
+
+# 7. Methods Techniques
+
+```{r sampling-technique}
+df |>
+  count(methods_extraction_sampling_technique, sort = TRUE) |>
+  filter(methods_extraction_sampling_technique != "N/A") |>
+  ggplot(aes(x = reorder(methods_extraction_sampling_technique, n), y = n)) +
+  geom_col(fill = "#756bb1") +
+  coord_flip() +
+  labs(title = "Sampling techniques", x = NULL, y = "Count")
+```
+
+```{r analysis-technique}
+df |>
+  count(methods_extraction_primary_analysis_technique, sort = TRUE) |>
+  filter(methods_extraction_primary_analysis_technique != "N/A") |>
+  ggplot(aes(x = reorder(methods_extraction_primary_analysis_technique, n), y = n)) +
+  geom_col(fill = "#de2d26") +
+  coord_flip() +
+  labs(title = "Primary analysis techniques", x = NULL, y = "Count")
+```
+
+```{r data-handling}
+df |>
+  count(methods_extraction_data_handling_technique, sort = TRUE) |>
+  filter(methods_extraction_data_handling_technique != "N/A") |>
+  ggplot(aes(x = reorder(methods_extraction_data_handling_technique, n), y = n)) +
+  geom_col(fill = "#fc9272") +
+  coord_flip() +
+  labs(title = "Data handling techniques", x = NULL, y = "Count")
+```
+
+
+# 8. Construct-Level Analysis
+
+```{r construct-direction}
+constructs |>
+  count(operational_direction, theoretical_direction) |>
+  ggplot(aes(x = operational_direction, y = theoretical_direction, size = n, colour = n)) +
+  geom_point() +
+  scale_size_continuous(range = c(3, 20)) +
+  scale_colour_viridis_c() +
+  labs(title = "Construct-level: operational vs theoretical direction",
+       x = "Operational direction", y = "Theoretical direction",
+       size = "Count", colour = "Count")
+```
+
+```{r personality-disorders}
+pd_counts <- constructs |>
+  filter(personality_disorder == TRUE) |>
+  count(construct_label_normalised, sort = TRUE)
+
+if (nrow(pd_counts) > 0) {
+  pd_counts |>
+    ggplot(aes(x = reorder(construct_label_normalised, n), y = n)) +
+    geom_col(fill = "#e6550d") +
+    coord_flip() +
+    labs(title = "Personality disorder constructs", x = NULL, y = "Count")
+} else {
+  cat("No personality disorder constructs found in this sample.\n")
+}
+```
+
+
+# 9. Evidence & Discourse
+
+```{r evidence-direction}
+evidence <- detail_df |>
+  filter(str_detect(detail_table, "^evidence_extraction"))
+
+evidence |>
+  count(detail_table, sort = TRUE) |>
+  mutate(direction = str_remove(detail_table, "evidence_extraction\\.")) |>
+  ggplot(aes(x = reorder(direction, n), y = n)) +
+  geom_col(fill = "#31a354") +
+  coord_flip() +
+  labs(title = "Evidence pieces by direction",
+       x = NULL, y = "Count")
+```
+
+```{r evidence-location}
+evidence |>
+  filter(!is.na(location)) |>
+  count(location, sort = TRUE) |>
+  ggplot(aes(x = reorder(location, n), y = n)) +
+  geom_col(fill = "#3182bd") +
+  coord_flip() +
+  labs(title = "Evidence by article section", x = NULL, y = "Count")
+```
+
+```{r discourse-types}
+discourse <- detail_df |>
+  filter(detail_table == "discourse.key_passages")
+
+if (nrow(discourse) > 0) {
+  discourse |>
+    count(type, sort = TRUE) |>
+    ggplot(aes(x = reorder(type, n), y = n)) +
+    geom_col(fill = "#636363") +
+    coord_flip() +
+    labs(title = "Discourse types", x = NULL, y = "Count")
+}
+```
+
+
+# 10. Frameworks Cited
+
+```{r frameworks}
+# Parse semicolon-separated framework citation fields
+parse_frameworks <- function(df, col_name, label) {
+  df |>
+    select(filename, value = all_of(col_name)) |>
+    filter(!is.na(value), value != "N/A", value != "") |>
+    separate_rows(value, sep = ";\\s*") |>
+    mutate(value = str_trim(value)) |>
+    filter(value != "", value != "N/A") |>
+    count(value, sort = TRUE) |>
+    mutate(citation_type = label)
+}
+
+framework_cols <- c(
+  "theoretical_extraction_positive_framework_citations",
+  "theoretical_extraction_negative_framework_citations",
+  "theoretical_extraction_neutral_framework_citations"
+)
+
+# Only plot if columns exist
+if (all(framework_cols %in% names(df))) {
+  frameworks <- bind_rows(
+    parse_frameworks(df, framework_cols[1], "Positive"),
+    parse_frameworks(df, framework_cols[2], "Negative"),
+    parse_frameworks(df, framework_cols[3], "Neutral")
+  )
+
+  if (nrow(frameworks) > 0) {
+    frameworks |>
+      group_by(citation_type) |>
+      slice_max(n, n = 10) |>
+      ungroup() |>
+      ggplot(aes(x = reorder(value, n), y = n, fill = citation_type)) +
+      geom_col() +
+      coord_flip() +
+      facet_wrap(~citation_type, scales = "free_y") +
+      scale_fill_manual(values = c("Positive" = "#2ca02c", "Negative" = "#d62728", "Neutral" = "#7f7f7f")) +
+      labs(title = "Top framework citations by valence",
+           x = NULL, y = "Count") +
+      theme(legend.position = "none")
+  }
+}
+```
+
+
+# 11. Summary Table
+
+```{r summary-table}
+summary_stats <- df |>
+  summarise(
+    `Total articles`       = n(),
+    `Categorical`          = sum(overall_classification_classification == "categorical", na.rm = TRUE),
+    `Dimensional`          = sum(overall_classification_classification == "dimensional", na.rm = TRUE),
+    `Hybrid`               = sum(overall_classification_classification == "hybrid", na.rm = TRUE),
+    `Indeterminate`        = sum(overall_classification_classification == "indeterminate", na.rm = TRUE),
+    `Mean dim (theory)`    = round(mean(theoretical_stance_dimensional_rating, na.rm = TRUE), 1),
+    `Mean cat (theory)`    = round(mean(theoretical_stance_categorical_rating, na.rm = TRUE), 1),
+    `Mean dim (ops)`       = round(mean(operational_stance_dimensional_rating, na.rm = TRUE), 1),
+    `Mean cat (ops)`       = round(mean(operational_stance_categorical_rating, na.rm = TRUE), 1),
+    `Mean confidence`      = round(mean(overall_classification_confidence, na.rm = TRUE), 2)
+  ) |>
+  pivot_longer(everything(), names_to = "Metric", values_to = "Value")
+
+knitr::kable(summary_stats, caption = "Summary statistics")
+```

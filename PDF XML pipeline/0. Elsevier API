@@ -1,0 +1,129 @@
+library(httr)
+library(xml2)
+
+
+# This script gets the Elsevier Articles using the API. 
+
+
+# ==============================================================================
+# USER CONFIGURATION
+# ==============================================================================
+elsevier_key <- Sys.getenv("ELSEVIER_API_KEY")
+if (nchar(elsevier_key) == 0) stop("ELSEVIER_API_KEY not set. Add it to your .env file.")
+input_folder <-  "path/to/input/xml/files"   # Folder with corrupted .xml files
+output_folder <- "path/to/output/xml/files"   # Where to save new .tei.xml files
+
+# ==============================================================================
+# SETUP
+# ==============================================================================
+
+# Create output folder if it doesn't exist
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+}
+
+# Get list of all .xml files in input folder
+xml_files <- list.files(input_folder, pattern = "\\.xml$", full.names = FALSE)
+cat("Found", length(xml_files), "XML files to process\n\n")
+
+# Initialise session counters
+n_skipped <- 0
+n_success <- 0
+n_error   <- 0
+
+
+# ==============================================================================
+# PROCESS EACH FILE
+# ==============================================================================
+
+for (i in seq_along(xml_files)) {
+  filename    <- xml_files[i]
+  output_path <- file.path(output_folder, filename)
+  
+  # ------------------------------------------------------------------------------
+  # Skip files already downloaded to the output folder
+  # This allows the script to resume cleanly after an interrupted run
+  # ------------------------------------------------------------------------------
+  if (file.exists(output_path)) {
+    n_skipped <- n_skipped + 1
+    next
+  }
+  
+  cat(sprintf("[%d/%d] Processing: %s\n", i, length(xml_files), filename))
+  
+  # Convert filename to DOI: remove .xml extension, replace underscores with /
+  doi <- gsub("\\.xml$", "", filename)
+  doi <- gsub("_", "/", doi, fixed = TRUE)
+  cat("  DOI:", doi, "\n")
+  
+  # Build API request URL
+  url <- paste0("https://api.elsevier.com/content/article/doi/", doi)
+  
+  # ------------------------------------------------------------------------------
+  # Retry loop: attempt up to 3 times with exponential back-off
+  # Handles transient network errors (e.g., connection reset by peer)
+  # ------------------------------------------------------------------------------
+  max_attempts <- 3
+  success      <- FALSE
+  
+  for (attempt in seq_len(max_attempts)) {
+    
+    # Wrap GET() in tryCatch to handle curl-level network errors gracefully
+    response <- tryCatch(
+      GET(
+        url,
+        add_headers(
+          `X-ELS-APIKey` = elsevier_key,
+          `Accept`       = "text/xml"
+        ),
+        query   = list(view = "FULL"),
+        timeout(30)    # Hard timeout prevents curl hanging on dropped connections
+      ),
+      error = function(e) {
+        cat(sprintf("  ✗ Attempt %d network error: %s\n", attempt, conditionMessage(e)))
+        NULL
+      }
+    )
+    
+    # If curl failed entirely, back off and retry
+    if (is.null(response)) {
+      Sys.sleep(5 * attempt)    # Back-off: 5 s, 10 s, 15 s
+      next
+    }
+    
+    # If HTTP 200, parse and save the XML
+    if (status_code(response) == 200) {
+      article_xml <- content(response, as = "parsed", encoding = "UTF-8")
+      write_xml(article_xml, output_path)
+      cat("  ✓ Success! Saved to:", filename, "\n")
+      n_success <- n_success + 1
+      success   <- TRUE
+      break
+      
+    } else {
+      # Non-200 response: log and retry with back-off
+      cat(sprintf("  ✗ Attempt %d HTTP %d\n", attempt, status_code(response)))
+      Sys.sleep(5 * attempt)
+    }
+  }
+  
+  # Log permanent failure if all attempts exhausted
+  if (!success) {
+    cat("  ✗ Failed after", max_attempts, "attempts — skipping.\n")
+    n_error <- n_error + 1
+  }
+  
+  # Be nice to the API — wait 1 second between requests
+  Sys.sleep(1)
+  cat("\n")
+}
+
+
+# ==============================================================================
+# SUMMARY
+# ==============================================================================
+
+cat(sprintf(
+  "Done!\n  Already existed (skipped): %d\n  Successfully downloaded:  %d\n  Failed after retries:     %d\n",
+  n_skipped, n_success, n_error
+))

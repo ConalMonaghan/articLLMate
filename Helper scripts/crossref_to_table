@@ -1,0 +1,63 @@
+library(dplyr)
+library(purrr)
+
+# Isolate just the list of articles
+articles_list <- Elsevier_Articles$Elsevier
+
+cat("Flattening expanded metadata for", length(articles_list), "articles...\n")
+
+# Loop through each article and pluck the specific variables
+flat_data <- map_dfr(articles_list, function(article) {
+  
+  meta <- article$metadata
+  
+  # If metadata is entirely missing or threw an API error string, return an empty tibble 
+  # (map_dfr will just skip this row)
+  if (is.null(meta) || is.character(meta)) return(tibble())
+  
+  # Pluck all requested variables
+  tibble(
+    DOI                    = pluck(meta, "DOI", .default = NA_character_),
+    Title                  = pluck(meta, "title", 1, .default = NA_character_),
+    Journal                = pluck(meta, "container-title", 1, .default = NA_character_),
+    Publisher              = pluck(meta, "publisher", .default = NA_character_),
+    Volume                 = pluck(meta, "volume", .default = NA_character_),
+    Issue                  = pluck(meta, "issue", .default = NA_character_),
+    Journal_Issue          = pluck(meta, "journal-issue", "issue", .default = NA_character_),
+    Type                   = pluck(meta, "type", .default = NA_character_),
+    Language               = pluck(meta, "language", .default = NA_character_),
+    Created_DateTime       = pluck(meta, "created", "date-time", .default = NA_character_),
+    Member                 = pluck(meta, "member", .default = NA_character_),
+    
+    # Numeric counts
+    Is_Referenced_By_Count = pluck(meta, "is-referenced-by-count", .default = NA_integer_),
+    Reference_Count        = pluck(meta, "reference-count", .default = NA_integer_),
+    References_Count       = pluck(meta, "references-count", .default = NA_integer_),
+    
+    # Content domain is usually a list of domains, so we collapse it into a single comma-separated string
+    Content_Domain         = paste(pluck(meta, "content-domain", "domain", .default = character(0)), collapse = ", "),
+    
+    # Authors requires iterating through the sub-list of authors to grab family and given names
+    Authors = paste(
+      map_chr(pluck(meta, "author", .default = list()), ~ paste(.x$family, .x$given, sep = ", ")), 
+      collapse = "; "
+    )
+  )
+  
+}, .id = "File_DOI")
+
+# --- POST-PROCESSING ---
+
+# Clean up any empty strings created by the paste() functions when data was missing
+flat_data <- flat_data %>%
+  mutate(
+    Authors = ifelse(Authors %in% c(", ", ""), NA, Authors),
+    Content_Domain = ifelse(Content_Domain == "", NA, Content_Domain)
+  )
+
+# View the structure of your new flattened dataframe
+glimpse(flat_data)
+
+# Save to your working directory
+write.csv(flat_data, "input/R test/Elsevier_Metadata_Expanded.csv", row.names = FALSE)
+cat("Expanded data flattened and saved to CSV!\n")

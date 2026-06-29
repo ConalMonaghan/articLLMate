@@ -1,0 +1,58 @@
+# ==============================================================================
+# Table routing config for: prompt Valid
+# ==============================================================================
+# Defines how JSON response fields are split across output tables.
+#
+#   main:     Scalar values for the primary results table (one row per article)
+#   metadata: Long-text fields (thinking, explanations) — kept separate to
+#             avoid cluttering the main table
+#   detail:   Array-of-objects fields — each array element becomes its own row
+#             in a long-format detail table
+#
+# Any field not listed here defaults to "main".
+# ==============================================================================
+
+# ---- Relevance / skip logic ----
+# List of dot-separated field paths in the LLM response.
+# If ANY of these fields is FALSE, the article is marked SKIPPED_IRRELEVANT.
+# Leave empty (skip_if_false: []) if the prompt has no relevance gate.
+skip_if_false:
+  - "rel_uses_self_report"
+
+# ---- Dashboard ----
+# Fields to try (in order) when extracting a short critique for Google Sheets.
+# First match wins. Use dot-separated paths for nested fields.
+dashboard_critique_fields:
+  - "thinking_chain_of_thought"
+  - "summary_final"
+
+main:
+  - rel_uses_self_report
+  - content_category
+  - ctx_sample_type
+  - ctx_data_collection_mode
+  - ctx_data_collection_platform
+  - ms_is_multi_study
+  - ms_n_studies
+  - ms_validity_consistency
+  - profile_careless
+  - profile_overreporting
+  - profile_underreporting
+  - profile_inconsistency
+  - profile_acquiescence
+  - profile_infrequency
+  - profile_bot_detection
+  - absent_validity_in_limitations
+  - absent_complete_silence
+
+metadata:
+  - rel_explanation
+  - thinking_chain_of_thought
+  - absent_notable_gaps
+  - summary_final
+
+detail:
+  - ctx_elevated_risk_factors
+  - absent_threats_not_addressed
+  - validity_methods
+  - discourse_entries
