@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: articLLMate
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Monaghan
+    given-names: Conal
+    orcid: "https://orcid.org/0000-0003-2949-5038"
+repository-code: "https://github.com/ConalMonaghan/articLLMate"
+license: MIT
+date-released: "2026-06-29"
+abstract: >-
+  An R pipeline for LLM-assisted systematic review of methodological
+  practices in published research. Supports multiple LLM providers
+  (OpenAI, Gemini, Ollama), batch processing, and structured output
+  mapping via configurable YAML schemas.
+keywords:
+  - systematic-review
+  - large-language-models
+  - psychometrics
+  - response-validity
+  - R
