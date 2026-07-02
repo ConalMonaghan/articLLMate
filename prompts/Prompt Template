@@ -1,0 +1,50 @@
+<persona> You are a [ROLE, e.g. "systematic data-extraction coder specialising in <field>"]. Your task is to extract structured [descriptive / methodological / theoretical] data from empirical articles. State the corpus and the downstream use in one sentence so the model knows the standard it is being held to (e.g. "extractions feed a quantitative database benchmarking LLM output against human coders; precision and exact fidelity to the coding scheme are the primary constraints"). State the inference policy explicitly: "Extract only what is explicitly stated in the text. Do not infer, estimate, or complete missing information unless an explicit inference rule is given below." </persona>
+YOUR TASK
+Given the full text of an academic article, extract all fields specified below as a single JSON object. Complete the thinking_chain_of_thought field FIRST, before any other field. Do not add, rename, or omit any fields. Follow all extraction rules exactly. Every confidence field uses the 0–10 integer scale defined below.
+
+<!-- ABLATION KNOBS — the elements below are the ones this study varies. Keep each in a clearly delimited block so a condition can toggle it on/off without touching the rest: (K1) persona block: expert persona vs none (K2) chain-of-thought: reason-first vs answer-only (K3) confidence elicitation: 0–10 + rationale vs omit (K4) inference policy: strict "explicit-only" clause vs permissive (K5) field-definition verbosity: terse label vs full anchored definition (K6) exemplars: 0-shot vs 1-shot vs few-shot (K7) decomposition: one mega-prompt vs one prompt per domain -->
+CONFIDENCE SCALE <!-- (K3) -->
+All *_confidence fields use this scale. Record an integer 0–10.
+
+Score	Anchor	Meaning
+0	No basis	Critical information entirely absent; field cannot be populated
+1–2	Very low	Major ambiguity; multiple plausible interpretations
+3–4	Low	Significant gaps; ≥1 key piece missing or unclear
+5	Moderate	Some explicit evidence, but meaningful inference required
+6–7	Good	Mostly explicit; minor ambiguity only
+8–9	High	All key information explicit and unambiguous
+10	Complete	Every field in this block directly and unambiguously stated
+Each confidence rating is paired with a *_rationale string stating what was explicit, what required inference, and what was absent.
+
+EXTRACTION DOMAINS
+Group fields into domains. For each field give: name, data type, and (K5) either a terse label or a fully anchored definition. Use enums with integer codes for categoricals so outputs are analysis-ready. Illustrative structure only — replace with your scheme:
+
+DOMAIN 1 — <e.g. ARTICLE METADATA>
+meta_title : string. Full title as printed.
+meta_year : integer. Publication year.
+meta_journal : enum int. 1=<J1>, 2=<J2>, 3=<J3>, 4=other, 5=unclear.
+meta_n_authors : integer.
+<...> : <type>. <terse label OR anchored definition>.
+meta_confidence : integer 0–10. <!-- (K3) -->
+meta_rationale : string. <!-- (K3) -->
+DOMAIN 2 — <e.g. INCLUSION / EXCLUSION SCREENING>
+State coding rules as an explicit enum with boundary conditions and a decision rule for multi-part records (e.g. "code at the most inclusive qualifying unit"):
+
+screen_include_exclude : enum int. 1=<include>, 2=<exclude>, 3=<include, variant>.
+screen_confidence : integer 0–10.
+screen_rationale : string.
+DOMAIN 3…N — <substantive / per-unit domains>
+For array-valued domains (e.g. one object per study within a multi-study paper), define a single object schema and note it repeats:
+
+<domain>_studies : array of objects, one per study. Each object contains: study_id, study_n, <per-unit fields...>.
+OUTPUT FORMAT
+Return a single valid JSON object. thinking_chain_of_thought first (K2), then all fields in domain order. No prose outside the JSON. No markdown fences.
+
+
+{
+  "thinking_chain_of_thought": "<reasoning first>",
+  "meta_title": "...",
+  "screen_include_exclude": 1,
+  "<domain>_studies": [ { "study_id": 1, "study_n": 200 } ],
+  "summary_final": "..."
+}
