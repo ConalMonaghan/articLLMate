@@ -88,6 +88,7 @@ PRE_DIR <- here("scripts", "preprocess")
 
 # ---- Load ledger helpers and initialise / resume the ledger ------------------
 source(file.path(PRE_DIR, "audit_ledger.R"))
+source(file.path(PRE_DIR, "run_manifest.R"))
 
 if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 run_started_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
@@ -132,6 +133,40 @@ cat("\n========== FINALISE: Audit Funnel & Summary ==========\n")
 ledger <- ledger_finalize(ledger)
 ledger_save(ledger, OUTPUT_DIR)
 source(file.path(PRE_DIR, "funnel_summary.R"), local = FALSE)
+
+# ---- Reproducibility manifest ------------------------------------------------
+write_run_manifest(
+  output_dir     = OUTPUT_DIR,
+  xml_dir        = XML_DIR,
+  ledger         = ledger,
+  run_started_at = run_started_at,
+  config = list(
+    project_name = project_name,
+    source_batch = source_batch,
+    ingest_route = ingest_route,
+    env_name     = env_name,
+    PDF_DIR      = if (length(PDF_DIR) == 1 && is.na(PDF_DIR)) NA_character_ else PDF_DIR,
+    XML_DIR      = XML_DIR,
+    OUTPUT_DIR   = OUTPUT_DIR,
+    stages = list(
+      seed_ledger    = run_seed_ledger,
+      pdf_to_xml     = run_pdf_to_xml,
+      crossref       = run_crossref,
+      body_extract   = run_body_extract,
+      content_filter = run_content_filter,
+      truncate       = run_truncate,
+      length_filter  = run_length_filter,
+      token_profile  = run_token_profile
+    ),
+    levers = list(
+      crossref_email     = crossref_email,
+      autosave_frequency = autosave_frequency,
+      MIN_WORDS          = MIN_WORDS,
+      MAX_WORDS          = MAX_WORDS,
+      token_encoding     = token_encoding
+    )
+  )
+)
 
 cat("\n========================================\n")
 cat("Pre-processing complete. Audit trail in:", OUTPUT_DIR, "\n")

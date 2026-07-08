@@ -67,6 +67,9 @@ Intermediate objects are written to `output/<project>/`:
 - `preprocess_funnel.csv` — stage-by-stage counts (identification → included).
 - `preprocess_summary.txt` — human-readable run report with the funnel and
   exclusion-reason breakdown.
+- `run_manifest.json` — reproducibility metadata: R and package versions, the
+  GROBID version (read from the TEI header), git commit / branch / dirty state,
+  the config levers used, and headline article counts.
 - `reports/<batch>_excluded_{short,long}.csv` — length-based exclusions.
 
 ## Extending the pipeline
@@ -84,5 +87,4 @@ Intermediate objects are written to `output/<project>/`:
 ## Not yet handled (flagged during the audit)
 
 - **Deduplication** across publisher batches / duplicate DOIs.
-- **Reproducibility manifest** (GROBID version, package versions, git commit).
 - **PRISMA flow diagram** (the funnel table provides the numbers).
