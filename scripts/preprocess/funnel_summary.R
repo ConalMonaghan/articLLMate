@@ -1,0 +1,100 @@
+# ==============================================================================
+# FUNNEL + SUMMARY WRITER
+# ==============================================================================
+#
+# PURPOSE:
+# Turn the finalized audit ledger into (a) a stage-by-stage funnel table showing
+# how many articles survive each gate and why they drop out (PRISMA-style counts
+# without drawing the diagram), and (b) a human-readable run summary in the
+# style of the main pipeline's 04_generate_summary.R.
+#
+# EXPECTS (from the master environment):
+#   ledger        - the FINALIZED audit ledger (run ledger_finalize() first)
+#   OUTPUT_DIR    - where to write funnel + summary
+#   source_batch, run_started_at (optional)
+#
+# PRODUCES:
+#   <OUTPUT_DIR>/preprocess_funnel.csv
+#   <OUTPUT_DIR>/preprocess_summary.txt
+# ==============================================================================
+
+library(readr)
+library(tibble)
+
+# The funnel contains only SEQUENTIAL GATES — stages that actually exclude
+# articles — so each step's drop is a genuine loss. DOI detection and Crossref
+# metadata are informational (a missing DOI does not by itself exclude an
+# article), so they are reported separately below rather than as funnel steps.
+build_funnel <- function(ledger) {
+  n_start   <- nrow(ledger)
+  n_xml     <- sum(isTRUE_vec(ledger$xml_created))
+  n_parsed  <- sum(isTRUE_vec(ledger$xml_created) & isTRUE_vec(ledger$parse_ok))
+  n_length  <- sum(ledger$length_status == "kept", na.rm = TRUE)
+  n_incl    <- sum(ledger$final_status == "included", na.rm = TRUE)
+
+  stages <- c(
+    "0. Articles in corpus (starting N)",
+    "1. XML produced (GROBID ok)",
+    "2. Body parsed OK",
+    "3. Within length bounds",
+    "4. Final included"
+  )
+  counts <- c(n_start, n_xml, n_parsed, n_length, n_incl)
+
+  tibble(
+    stage   = stages,
+    n       = counts,
+    dropped = c(NA_integer_, head(counts, -1) - tail(counts, -1))
+  )
+}
+
+funnel <- build_funnel(ledger)
+
+# ---- Informational metadata counts (not funnel gates) ------------------------
+has_doi   <- !is.na(ledger$extracted_doi) & nzchar(ledger$extracted_doi)
+info_lines <- c(
+  sprintf("  DOI detected:            %6d", sum(has_doi)),
+  sprintf("  Crossref metadata found: %6d", sum(isTRUE_vec(ledger$meta_found))),
+  sprintf("  DOI mismatches:          %6d", sum(ledger$doi_match == FALSE, na.rm = TRUE))
+)
+
+if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
+funnel_path  <- file.path(OUTPUT_DIR, "preprocess_funnel.csv")
+summary_path <- file.path(OUTPUT_DIR, "preprocess_summary.txt")
+write_csv(funnel, funnel_path)
+
+# ---- Exclusion-reason breakdown ----------------------------------------------
+excl <- ledger[!is.na(ledger$final_status) & ledger$final_status == "excluded", ]
+reason_tbl <- sort(table(excl$exclusion_reason), decreasing = TRUE)
+
+# ---- Write summary text ------------------------------------------------------
+lines <- c(
+  "=== articLLMate Pre-Processing Audit Summary ===",
+  sprintf("Source batch:   %s", source_batch %||% "(unnamed)"),
+  sprintf("Date:           %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+  if (!is.null(run_started_at)) sprintf("Run started:    %s", run_started_at) else NULL,
+  "",
+  "--- Funnel ---"
+)
+for (r in seq_len(nrow(funnel))) {
+  drop_str <- if (is.na(funnel$dropped[r])) "" else sprintf("   (-%d)", funnel$dropped[r])
+  lines <- c(lines, sprintf("  %-38s %6d%s", funnel$stage[r], funnel$n[r], drop_str))
+}
+lines <- c(lines, "", "--- Metadata (informational) ---", info_lines)
+lines <- c(lines, "", "--- Exclusion reasons ---")
+if (length(reason_tbl) > 0) {
+  for (nm in names(reason_tbl)) {
+    lines <- c(lines, sprintf("  %-30s %6d", nm, reason_tbl[[nm]]))
+  }
+} else {
+  lines <- c(lines, "  (none)")
+}
+lines <- c(lines, "",
+           sprintf("Ledger: %s", file.path(OUTPUT_DIR, "audit_ledger.csv")),
+           sprintf("Funnel: %s", funnel_path))
+
+writeLines(lines, summary_path)
+
+cat(paste(lines, collapse = "\n"), "\n")
+cat(sprintf("\n  [OK] Funnel written:  %s\n", funnel_path))
+cat(sprintf("  [OK] Summary written: %s\n", summary_path))
