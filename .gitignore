@@ -20,9 +20,9 @@ Thumbs.db
 # Output data (regenerated per run)
 output/
 
-# Large input corpora (users supply their own)
-input/pilot_sample/
-input/R test/
+# Input corpora — copyrighted article full-text; users supply their own.
+# Ignore the whole tree so numbered stage folders (01_, 02_, ...) never go live.
+input/
 
 # Service account keys
 keys/
