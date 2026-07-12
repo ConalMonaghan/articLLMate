@@ -4,6 +4,10 @@
 
 articLLMate analyses academic research papers using an LLM to audit how authors handle response-validity threats in self-report data. Point it at a folder of `.xml` articles, choose a prompt, and run `_MASTER_RUN_PIPELINE.R`.
 
+### Pre-processing & audit pipeline
+
+Before the analysis run, the **data-input pipeline** (phases 0–3) turns a PDF corpus into clean, analysis-ready articles and produces a single **audit ledger** tracking every article from the original corpus through each stage. Configure and run `_MASTER_PREPROCESS_PIPELINE.R`; see [docs/preprocess_guide.md](docs/preprocess_guide.md) for the full walkthrough.
+
 ---
 
 ## Quick Start
