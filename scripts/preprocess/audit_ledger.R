@@ -141,10 +141,24 @@ ledger_conform <- function(ledger) {
 # `stage` (optional) is recorded in `last_stage`; `updated_at` is stamped for all
 # touched rows.
 # ------------------------------------------------------------------------------
+# Collapse rows that share an article_id WITHIN a single incoming batch, so the
+# ledger invariant (one row per article_id) always holds. For each duplicated
+# key, take the last non-NA value per column. This prevents a duplicate input
+# (e.g. the same PDF filed under two folders) from creating a phantom second row.
+collapse_updates <- function(updates) {
+  if (!any(duplicated(updates$article_id))) return(updates)
+  updates |>
+    group_by(article_id) |>
+    summarise(across(everything(), function(x) {
+      nn <- x[!is.na(x)]
+      if (length(nn) > 0) tail(nn, 1) else x[1]
+    }), .groups = "drop")
+}
+
 ledger_upsert <- function(ledger, updates, stage = NA_character_) {
   stopifnot("article_id" %in% names(updates))
   ledger  <- ledger_conform(ledger)
-  updates <- as_tibble(updates)
+  updates <- collapse_updates(as_tibble(updates))
 
   now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 
