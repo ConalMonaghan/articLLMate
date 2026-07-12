@@ -196,7 +196,7 @@ write_run_manifest(
       token_profile  = run_token_profile
     ),
     levers = list(
-      crossref_email     = crossref_email,
+      crossref_email_set = nzchar(crossref_email),  # record only that one was set, not the address (PII)
       autosave_frequency = autosave_frequency,
       MIN_WORDS          = MIN_WORDS,
       MAX_WORDS          = MAX_WORDS,
