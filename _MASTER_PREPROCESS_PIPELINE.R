@@ -84,14 +84,14 @@ run_crossref       <- TRUE     # Stage 2a: DOI resolution + Crossref metadata
 run_llm_resolver   <- TRUE     # Stage 2a2: Claude API mop-up for needs_review DOIs
 run_body_extract   <- TRUE     # Stage 2b: extract Title/DOI/body, slim the XML
 run_content_filter <- FALSE    # Stage 2d: TOC/errata/editorial removal (STUB — not implemented)
-run_truncate       <- FALSE    # Stage 2e: truncate to main text only (STUB — not implemented)
-run_length_filter  <- TRUE     # Stage 2c: word-count screen
+run_truncate       <- TRUE    # Stage 2e: truncate to main text only (STUB — not implemented)
+run_length_filter  <- FALSE     # Stage 2c: word-count screen
 run_token_profile  <- TRUE     # Stage 3:  token usage prediction
 
 # ---- Levers ----
-crossref_email     <- Sys.getenv("CROSSREF_EMAIL", unset = "your.email@example.com")
+crossref_email     <- Sys.getenv("CROSSREF_EMAIL", unset = "ADD YOUR EMAIL HERE")
 autosave_frequency <- 100        # Checkpoint the metadata .rds every N files (stage 2a)
-llm_web_search     <- FALSE      # Stage 2a2: let Claude web-search for the last unresolved DOIs (costs tokens; opt-in)
+llm_web_search     <- FALSE     # Stage 2a2: let Claude web-search for the last unresolved DOIs (costs tokens; opt-in)
 MIN_WORDS          <- 500        # Stage 2c: exclude articles shorter than this
 MAX_WORDS          <- 30000      # Stage 2c: exclude articles longer than this
 token_encoding     <- "cl100k_base"   # Stage 3: tiktoken encoding

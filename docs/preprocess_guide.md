@@ -14,7 +14,10 @@ feed it.
    [`PDF XML pipeline/1_pdf to xml.py`](../PDF%20XML%20pipeline/1_pdf%20to%20xml.py).
    This needs a running GROBID Docker server and is the one step not orchestrated
    by the master (it is GPU- and server-dependent). The master *detects* the
-   resulting XML.
+   resulting XML. **On an Apple Silicon Mac**, use
+   [`1_pdf to xml (Mac).py`](../PDF%20XML%20pipeline/1_pdf%20to%20xml%20(Mac).py)
+   and follow [docs/grobid_mac_walkthrough.md](grobid_mac_walkthrough.md)
+   (native arm64, no GPU).
 2. **Edit the config block** at the top of
    [`_MASTER_PREPROCESS_PIPELINE.R`](../_MASTER_PREPROCESS_PIPELINE.R): set
    `source_batch`, `PDF_DIR`, `XML_DIR`, the stage toggles, and the levers.
