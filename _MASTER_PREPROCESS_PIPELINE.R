@@ -55,6 +55,7 @@ OUTPUT_DIR <- PROJECT_DIR                                # Ledger, funnel, summa
 STAGE_OBJECT <- "articles.rds"
 STAGE_DIRS <- list(
   crossref = file.path(PROJECT_DIR, "02a_Crossref_Metadata"),  # p2a
+  llm      = file.path(PROJECT_DIR, "02a2_LLM_Resolved"),      # p2a2 (Claude)
   body     = file.path(PROJECT_DIR, "02b_Body_Text"),          # p2b
   length   = file.path(PROJECT_DIR, "02c_Length_Screened"),    # p2c
   content  = file.path(PROJECT_DIR, "02d_Content_Filtered"),   # p2d (stub)
@@ -65,7 +66,8 @@ STAGE_DIRS <- list(
 # ---- Stage toggles: TRUE = run, FALSE = skip ----
 run_seed_ledger    <- TRUE     # Stage 0:  seed ledger from PDF corpus (needs PDF_DIR)
 run_pdf_to_xml     <- TRUE     # Stage 1:  reconcile PDFs vs GROBID XML
-run_crossref       <- TRUE     # Stage 2a: DOI detection + Crossref metadata
+run_crossref       <- TRUE     # Stage 2a: DOI resolution + Crossref metadata
+run_llm_resolver   <- TRUE     # Stage 2a2: Claude API mop-up for needs_review DOIs
 run_body_extract   <- TRUE     # Stage 2b: extract Title/DOI/body, slim the XML
 run_content_filter <- FALSE    # Stage 2d: TOC/errata/editorial removal (STUB — not implemented)
 run_truncate       <- FALSE    # Stage 2e: truncate to main text only (STUB — not implemented)
@@ -139,6 +141,7 @@ if (ingest_route != "extraction") {
 run_stage("STAGE 0: Seed Ledger (PDF corpus)",       "p0_seed_ledger.R",   run_seed_ledger)
 run_stage("STAGE 1: PDF -> XML Reconciliation",      "p1_pdf_to_xml.R",    run_pdf_to_xml)
 run_stage("STAGE 2a: DOI + Crossref Metadata",       "p2a_crossref.R",     run_crossref)
+run_stage("STAGE 2a2: LLM DOI Resolver (Claude)",    "p2a2_llm_resolver.R", run_llm_resolver)
 run_stage("STAGE 2b: Body Extraction",               "p2b_body_extract.R", run_body_extract)
 run_stage("STAGE 2d: Content Filter (STUB)",         "p2d_content_filter.R", run_content_filter)
 run_stage("STAGE 2e: Truncate to Main Text (STUB)",  "p2e_truncate.R",     run_truncate)

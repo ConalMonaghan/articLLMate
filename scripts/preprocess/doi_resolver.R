@@ -47,6 +47,30 @@ normalize_doi <- function(doi) {
   d
 }
 
+# Heuristic OCR repairs for garbled DOIs. Returns candidate DOIs to TRY (each is
+# still verified before acceptance, so an over-aggressive repair can't slip
+# through). Targets the corruption seen in this corpus: commas for periods, an
+# extra digit in the APA prefix (10.10371/ -> 10.1037/), stray leading digits,
+# and non-DOI junk characters.
+doi_repair_candidates <- function(doi) {
+  if (is.na(doi) || !nzchar(doi)) return(character(0))
+  base <- tolower(trimws(doi))
+  variants <- c(
+    gsub(",", ".", base),                                 # commas -> periods
+    sub("^10\\.1037[0-9]/", "10.1037/", base),            # 10.10371/ -> 10.1037/
+    sub("^(10\\.1037/+)1(0022-3514)", "\\1\\2", base),    # /10022-3514 -> /0022-3514
+    gsub("[^0-9a-z./()-]", "", base)                       # drop junk chars
+  )
+  # apply comma fix on top of each, and add single/double-slash APA variants
+  variants <- unique(c(variants, gsub(",", ".", variants)))
+  variants <- unique(c(variants,
+                       sub("//", "/", variants),
+                       sub("(10\\.1037)/(?!/)", "\\1//", variants, perl = TRUE)))
+  cands <- unique(vapply(variants, normalize_doi, character(1)))
+  cands <- cands[nzchar(cands) & cands != normalize_doi(base)]  # only genuinely new
+  cands
+}
+
 # --- extract article metadata from a GROBID TEI document ----------------------
 # Scoped to //sourceDesc so we read the ARTICLE's own header, not its references.
 xml_article_meta <- function(doc) {
@@ -125,6 +149,25 @@ year_from_id <- function(id) {
   if (length(m) == 0) NA_character_ else gsub("[()]", "", m)
 }
 
+# Extract the first-author surname from an article_id ("Bos (2000) – ..." -> "Bos").
+surname_from_id <- function(id) trimws(sub("\\s*\\(.*$", "", id))
+
+# Map resolution_method values to the pipeline STEP that resolved them, and count.
+# This is the per-step DOI resolution tally (crossref / regex / claude / ...).
+RESOLUTION_STEP <- c(
+  doi_verified   = "crossref", doi_supp_fixed = "crossref", bibliographic = "crossref",
+  doi_regex_fixed = "regex",   llm_resolved   = "claude",
+  unresolved     = "unresolved", parse_error  = "unresolved"
+)
+doi_resolution_summary <- function(log_df) {
+  library(dplyr)
+  log_df |>
+    mutate(step = RESOLUTION_STEP[resolution_method] |> unname(),
+           step = ifelse(is.na(step), "other", step)) |>
+    count(step, resolution_method, name = "n") |>
+    arrange(match(step, c("crossref","regex","claude","unresolved","other")), desc(n))
+}
+
 resolve_article <- function(xm, id = NULL) {
   # Fall back to the year encoded in the filename when the XML header lacks it.
   if ((!nzchar(xm$year %||% "")) && !is.null(id)) {
@@ -138,7 +181,7 @@ resolve_article <- function(xm, id = NULL) {
 
   # Attempt 1 — resolve by (normalized) DOI
   if (!is.na(norm_doi) && nzchar(norm_doi)) {
-    d <- tryCatch(cr_works(norm_doi)$data, error = function(e) NULL)
+    d <- tryCatch(suppressWarnings(cr_works(norm_doi)$data), error = function(e) NULL)
     if (!is.null(d) && nrow(d) > 0) {
       vr <- cr_verify(xm, d)
       if (verified_all(vr)) {
@@ -148,12 +191,29 @@ resolve_article <- function(xm, id = NULL) {
     }
   }
 
+  # Attempt 1b — repaired (OCR-fixed) DOI candidates, each strictly verified
+  if (method == "unresolved" && !is.na(raw_doi) && nzchar(raw_doi)) {
+    for (cd in doi_repair_candidates(raw_doi)) {
+      d <- tryCatch(suppressWarnings(cr_works(cd)$data), error = function(e) NULL)
+      if (!is.null(d) && nrow(d) > 0) {
+        vr_c <- cr_verify(xm, d)
+        # A repaired DOI is a guess, so require the same strong-but-header-
+        # tolerant bar as the bibliographic path (title+author+(year|journal),
+        # no contradictions) rather than a full four-field match.
+        if (verified_bib(vr_c)) {
+          method <- "doi_regex_fixed"; accepted_doi <- d$doi[1]; meta <- d; vr <- vr_c
+          break
+        }
+      }
+    }
+  }
+
   # Attempt 2 — bibliographic fallback (title + author), verify each candidate
   if (method == "unresolved" && nzchar(canon(xm$title))) {
     q_title <- strip_supp_title(xm$title)
-    cand <- tryCatch(
+    cand <- tryCatch(suppressWarnings(
       cr_works(flq = c(`query.bibliographic` = q_title, `query.author` = xm$surname %||% ""),
-               limit = 5)$data,
+               limit = 5)$data),
       error = function(e) NULL)
     if (!is.null(cand) && nrow(cand) > 0) {
       for (i in seq_len(nrow(cand))) {

@@ -81,6 +81,20 @@ for (r in seq_len(nrow(funnel))) {
   lines <- c(lines, sprintf("  %-38s %6d%s", funnel$stage[r], funnel$n[r], drop_str))
 }
 lines <- c(lines, "", "--- Metadata (informational) ---", info_lines)
+
+# ---- DOI resolution per step (crossref / regex / claude / unresolved) --------
+if ("resolution_method" %in% names(ledger) && any(!is.na(ledger$resolution_method))) {
+  step_of <- c(doi_verified = "crossref", doi_supp_fixed = "crossref",
+               bibliographic = "crossref", doi_regex_fixed = "regex",
+               llm_resolved = "claude", unresolved = "unresolved",
+               parse_error = "unresolved")
+  rstep <- step_of[ledger$resolution_method]
+  rstep[is.na(rstep) & !is.na(ledger$resolution_method)] <- "other"
+  rtab <- sort(table(rstep[!is.na(rstep)]), decreasing = TRUE)
+  lines <- c(lines, "", "--- DOI resolution (per step) ---")
+  for (nm in names(rtab)) lines <- c(lines, sprintf("  %-20s %6d", nm, rtab[[nm]]))
+}
+
 lines <- c(lines, "", "--- Exclusion reasons ---")
 if (length(reason_tbl) > 0) {
   for (nm in names(reason_tbl)) {
