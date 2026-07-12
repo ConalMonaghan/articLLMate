@@ -12,15 +12,16 @@
 # EXPECTS (from the master environment):
 #   ledger              - the audit ledger (tibble)
 #   XML_DIR             - folder of GROBID .tei.xml files
-#   OUTPUT_DIR          - where the enriched .rds object is written
-#   source_batch        - label / used for the output object filename
+#   STAGE_DIRS$crossref - output folder for this stage (02a_Crossref_Metadata)
+#   STAGE_OBJECT        - standard object filename ("articles.rds")
 #   crossref_email      - polite-pool email for rcrossref
 #   autosave_frequency  - checkpoint the .rds every N files
 #
 # PRODUCES:
 #   ledger              - extracted_doi / crossref_doi / doi_match / meta_found
-#   <OUTPUT_DIR>/<source_batch>_Full.rds  - list keyed by article_id with
-#                                           $XML (raw), $EXTRACTED_DOI, $META
+#   STAGE_DIRS$crossref/articles.rds - list keyed by article_id with
+#                                      $XML (raw), $EXTRACTED_DOI, $META
+#   CURRENT_OBJECT      - updated to point at this stage's object (the baton)
 # ==============================================================================
 
 library(xml2)
@@ -38,8 +39,9 @@ xml_files <- list.files(XML_DIR, pattern = "\\.xml$", full.names = TRUE, ignore.
 total_articles <- length(xml_files)
 if (total_articles == 0) stop("p2a_crossref: no XML files found in XML_DIR.")
 
-if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
-db_path <- file.path(OUTPUT_DIR, paste0(source_batch, "_Full.rds"))
+stage_dir <- STAGE_DIRS$crossref
+if (!dir.exists(stage_dir)) dir.create(stage_dir, recursive = TRUE)
+db_path <- file.path(stage_dir, STAGE_OBJECT)
 
 # Resume: load an existing enriched object if present.
 if (file.exists(db_path)) {
@@ -128,3 +130,6 @@ n_mismatch <- sum(ledger$doi_match == FALSE, na.rm = TRUE)
 cat(sprintf("\n  [OK] Metadata object saved: %s\n", db_path))
 cat(sprintf("  [SUMMARY] Metadata found: %d  |  No DOI in XML: %d  |  DOI mismatches: %d\n",
             n_meta, n_no_doi, n_mismatch))
+
+# Pass the baton: this object is the input to the next producing stage.
+CURRENT_OBJECT <- db_path

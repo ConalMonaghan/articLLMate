@@ -27,4 +27,5 @@
 # ==============================================================================
 
 cat("  [STUB] Main-text truncation not implemented — skipped.\n")
-cat("         Hook point reserved: ledger column `truncated`, lever `truncate_to_main_text`.\n")
+cat("         Hook point reserved: ledger column `truncated`, lever `truncate_to_main_text`, folder STAGE_DIRS$truncate (02e_Truncated).\n")
+cat("         (No folder is created while skipped, so its absence signals it did not run.)\n")

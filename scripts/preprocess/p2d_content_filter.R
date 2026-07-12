@@ -28,4 +28,5 @@
 # ==============================================================================
 
 cat("  [STUB] Content filter (TOC / errata / editorial) not implemented — skipped.\n")
-cat("         Hook point reserved: ledger column `content_flag`.\n")
+cat("         Hook point reserved: ledger column `content_flag`, folder STAGE_DIRS$content (02d_Content_Filtered).\n")
+cat("         (No folder is created while skipped, so its absence signals it did not run.)\n")

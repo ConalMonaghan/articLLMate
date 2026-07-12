@@ -10,25 +10,32 @@
 #
 # EXPECTS (from the master environment):
 #   ledger        - the audit ledger (tibble)
-#   OUTPUT_DIR    - folder holding <source_batch>_Screened.rds (from stage 2c)
-#   source_batch
+#   CURRENT_OBJECT- path to the latest stage object (baton); falls back to the
+#                   length- then body-stage objects
+#   STAGE_DIRS$tokens / STAGE_OBJECT - this stage's output folder
 #   env_name      - conda env with tiktoken (default "articLLMate")
 #   token_encoding- tiktoken encoding (default "cl100k_base")
 #
 # PRODUCES:
 #   ledger        - n_tokens filled for surviving articles
+#   STAGE_DIRS$tokens/token_counts.csv - per-article token counts
 # ==============================================================================
 
 library(reticulate)
+library(readr)
 
-in_path <- file.path(OUTPUT_DIR, paste0(source_batch, "_Screened.rds"))
-if (!file.exists(in_path)) {
-  # Fall back to the pre-length-filter object if screening was skipped.
-  in_path <- file.path(OUTPUT_DIR, paste0(source_batch, "_Clean.rds"))
+in_path <- if (!is.na(CURRENT_OBJECT) && file.exists(CURRENT_OBJECT)) {
+  CURRENT_OBJECT
+} else if (file.exists(file.path(STAGE_DIRS$length, STAGE_OBJECT))) {
+  file.path(STAGE_DIRS$length, STAGE_OBJECT)
+} else {
+  file.path(STAGE_DIRS$body, STAGE_OBJECT)
 }
 if (!file.exists(in_path)) {
   stop("p3_token_profile: no input object found (run stages 2b/2c first).")
 }
+stage_dir <- STAGE_DIRS$tokens
+if (!dir.exists(stage_dir)) dir.create(stage_dir, recursive = TRUE)
 
 use_condaenv(env_name %||% "articLLMate", required = TRUE)
 tiktoken <- import("tiktoken")
@@ -54,6 +61,8 @@ close(pb)
 
 upd <- tibble(article_id = keys, n_tokens = as.integer(n_tokens))
 ledger <- ledger_upsert(ledger, upd, stage = "p3_token_profile")
+
+write_csv(upd, file.path(stage_dir, "token_counts.csv"))
 
 ctx_sizes <- c(4096, 8192, 16384, 32768, 65536)
 cat(sprintf("\n  [SUMMARY] Total tokens: %s  |  Mean: %.0f  |  Median: %.0f  |  Max: %s\n",

@@ -10,18 +10,26 @@
 #
 # EXPECTS (from the master environment):
 #   ledger        - the audit ledger (tibble)
-#   OUTPUT_DIR    - folder holding <source_batch>_Full.rds (from stage 2a)
-#   source_batch  - used to locate the input object and name the output
+#   CURRENT_OBJECT- path to the previous stage's object (baton); falls back to
+#                   STAGE_DIRS$crossref/articles.rds
+#   STAGE_DIRS$body / STAGE_OBJECT - this stage's output folder + filename
 #
 # PRODUCES:
 #   ledger        - parse_ok / has_title / has_body / parse_error filled
-#   <OUTPUT_DIR>/<source_batch>_Clean.rds - slimmed list keyed by article_id
+#   STAGE_DIRS$body/articles.rds - slimmed list keyed by article_id
+#   CURRENT_OBJECT- updated to this stage's object (the baton)
 # ==============================================================================
 
 library(xml2)
 
-in_path  <- file.path(OUTPUT_DIR, paste0(source_batch, "_Full.rds"))
-out_path <- file.path(OUTPUT_DIR, paste0(source_batch, "_Clean.rds"))
+in_path <- if (!is.na(CURRENT_OBJECT) && file.exists(CURRENT_OBJECT)) {
+  CURRENT_OBJECT
+} else {
+  file.path(STAGE_DIRS$crossref, STAGE_OBJECT)
+}
+stage_dir <- STAGE_DIRS$body
+if (!dir.exists(stage_dir)) dir.create(stage_dir, recursive = TRUE)
+out_path <- file.path(stage_dir, STAGE_OBJECT)
 
 if (!file.exists(in_path)) {
   stop("p2b_body_extract: expected input not found (run stage 2a first): ", in_path)
@@ -104,3 +112,5 @@ n_fail <- sum(ledger$parse_ok == FALSE, na.rm = TRUE)
 cat(sprintf("\n  [OK] Slimmed object saved: %s\n", out_path))
 cat(sprintf("  [SUMMARY] Parsed OK: %d  |  Parse failures: %d  |  Elapsed: %.1fs\n",
             n_ok, n_fail, total_duration))
+
+CURRENT_OBJECT <- out_path

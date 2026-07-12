@@ -11,27 +11,33 @@
 #
 # EXPECTS (from the master environment):
 #   ledger        - the audit ledger (tibble)
-#   OUTPUT_DIR    - folder holding <source_batch>_Clean.rds (from stage 2b)
-#   REPORT_DIR    - where exclusion CSVs are written
-#   source_batch  - used to locate the input object and name outputs
+#   CURRENT_OBJECT- path to the previous stage's object (baton); falls back to
+#                   STAGE_DIRS$body/articles.rds
+#   STAGE_DIRS$length / STAGE_OBJECT - this stage's output folder + filename
 #   MIN_WORDS, MAX_WORDS
 #
 # PRODUCES:
 #   ledger        - n_words / length_status filled
-#   <OUTPUT_DIR>/<source_batch>_Screened.rds - kept articles only
-#   <REPORT_DIR>/<source_batch>_excluded_{short,long}.csv
+#   STAGE_DIRS$length/articles.rds - kept articles only
+#   STAGE_DIRS$length/excluded_{short,long}.csv - exclusion reports
+#   CURRENT_OBJECT- updated to this stage's object (the baton)
 # ==============================================================================
 
 library(purrr)
 library(readr)
 
-in_path  <- file.path(OUTPUT_DIR, paste0(source_batch, "_Clean.rds"))
-out_path <- file.path(OUTPUT_DIR, paste0(source_batch, "_Screened.rds"))
+in_path <- if (!is.na(CURRENT_OBJECT) && file.exists(CURRENT_OBJECT)) {
+  CURRENT_OBJECT
+} else {
+  file.path(STAGE_DIRS$body, STAGE_OBJECT)
+}
+stage_dir <- STAGE_DIRS$length
+if (!dir.exists(stage_dir)) dir.create(stage_dir, recursive = TRUE)
+out_path <- file.path(stage_dir, STAGE_OBJECT)
 
 if (!file.exists(in_path)) {
   stop("p2c_length_filter: expected input not found (run stage 2b first): ", in_path)
 }
-if (!dir.exists(REPORT_DIR)) dir.create(REPORT_DIR, recursive = TRUE)
 
 obj <- readRDS(in_path)
 if (!is.list(obj) || length(obj) == 0) stop("p2c_length_filter: empty object.")
@@ -61,11 +67,11 @@ excl <- upd %>%
 
 if (any(excl$length_status == "too_short")) {
   write_csv(dplyr::filter(excl, length_status == "too_short"),
-            file.path(REPORT_DIR, paste0(source_batch, "_excluded_short.csv")))
+            file.path(stage_dir, "excluded_short.csv"))
 }
 if (any(excl$length_status == "too_long")) {
   write_csv(dplyr::filter(excl, length_status == "too_long"),
-            file.path(REPORT_DIR, paste0(source_batch, "_excluded_long.csv")))
+            file.path(stage_dir, "excluded_long.csv"))
 }
 
 # ---- Save kept-only object ---------------------------------------------------
@@ -79,3 +85,5 @@ n_kept  <- length(keep_keys)
 cat(sprintf("  [SUMMARY] Total: %d  |  Too short: %d  |  Too long: %d  |  Kept: %d\n",
             n_total, n_short, n_long, n_kept))
 cat(sprintf("  [OK] Screened object saved: %s\n", out_path))
+
+CURRENT_OBJECT <- out_path

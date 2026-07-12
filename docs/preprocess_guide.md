@@ -58,8 +58,33 @@ idempotent** (no duplicate rows, earlier values not blanked out).
 | `run_length_filter` | `p2c_length_filter.R` | Word-count screen (`MIN_WORDS`/`MAX_WORDS`); writes exclusion CSVs. |
 | `run_token_profile` | `p3_token_profile.R` | Counts tokens per article (tiktoken via conda env). Needs the conda env. |
 
-Intermediate objects are written to `output/<project>/`:
-`<batch>_Full.rds` → `<batch>_Clean.rds` → `<batch>_Screened.rds`.
+## Project folder layout (numbered stages)
+
+Everything lives together under one project folder (`input/<project>/`), and each
+stage that runs writes its output into its own numbered folder whose number
+matches the script number. Because a folder only appears when its stage runs,
+**"which folders exist" is itself an audit of what has been done.**
+
+```
+input/Ho_SPSP/
+├── 00_PDFS/                  original PDFs (input; year subfolders OK)
+├── 01_Article_Text/          GROBID .tei.xml (input)
+├── 02a_Crossref_Metadata/    p2a → articles.rds  (XML + Crossref metadata)
+├── 02b_Body_Text/            p2b → articles.rds  (slimmed Title/DOI/Text)
+├── 02c_Length_Screened/      p2c → articles.rds  + excluded_{short,long}.csv
+├── 02d_Content_Filtered/     p2d (stub — only appears once implemented/run)
+├── 02e_Truncated/            p2e (stub — only appears once implemented/run)
+├── 03_Token_Profiled/        p3  → token_counts.csv
+│
+├── audit_ledger.csv / .rds   the per-article master sheet (run-level)
+├── preprocess_funnel.csv     stage-by-stage counts (identification → included)
+├── preprocess_summary.txt    human-readable run report
+└── run_manifest.json         reproducibility metadata
+```
+
+Each producing stage reads the previous stage's `articles.rds` (via an internal
+`CURRENT_OBJECT` pointer) and writes its own, so skipped stub stages never break
+the chain.
 
 ## Outputs
 
@@ -70,7 +95,7 @@ Intermediate objects are written to `output/<project>/`:
 - `run_manifest.json` — reproducibility metadata: R and package versions, the
   GROBID version (read from the TEI header), git commit / branch / dirty state,
   the config levers used, and headline article counts.
-- `reports/<batch>_excluded_{short,long}.csv` — length-based exclusions.
+- `02c_Length_Screened/excluded_{short,long}.csv` — length-based exclusions.
 
 ## Extending the pipeline
 

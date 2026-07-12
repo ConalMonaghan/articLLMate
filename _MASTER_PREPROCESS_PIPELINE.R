@@ -17,7 +17,7 @@
 # HOW TO USE:
 # 1. (Pre-step) Run GROBID to turn PDFs into XML — see "PDF XML pipeline/
 #    1_pdf to xml.py" and docs/preprocess_guide.md. This master detects the
-#    resulting XML; it does not run GROBID for you.
+#    resulting XML; it does not run GROBID for you. Grobid is a bit of a pain, better on PC than Mac as it can run via CUDA. 
 # 2. Set the USER CONFIGURATION below.
 # 3. Source this entire script.
 #
@@ -37,16 +37,30 @@ library(readr)
 # USER CONFIGURATION - Edit these before each run
 # ==============================================================================
 
-project_name  <- "my_preprocess"          # Output subfolder under output/
-source_batch  <- "TEST"                    # Corpus label (e.g. "APA", "Sage"); also names the .rds objects
+project_name  <- "Ho_SPSP"          # Output subfolder under output/
+source_batch  <- "SPSP"                    # Corpus label (e.g. "APA", "Sage"); also names the .rds objects
 ingest_route  <- "extraction"              # "extraction" (wired) | "image" (reserved for a later branch)
 env_name      <- "articLLMate"             # Conda env (used by the token stage)
 
 # ---- Input / output paths ----
-PDF_DIR    <- NA                                       # Folder of ORIGINAL .pdf files (NA = start from XML, no GROBID reconciliation)
-XML_DIR    <- here("input", "Test xml files")          # Folder of GROBID .tei.xml output
-OUTPUT_DIR <- here("output", project_name)             # Objects + ledger + summary (auto-created)
-REPORT_DIR <- here("output", project_name, "reports")  # Exclusion CSVs
+# Everything lives together under one numbered project folder. Each stage that
+# runs writes its output into its own numbered folder whose number matches the
+# script number (02a, 02b, ...), so "which folders exist" tells you what ran.
+PROJECT_DIR <- here("input", project_name)
+PDF_DIR    <- file.path(PROJECT_DIR, "00_PDFS")          # 00: ORIGINAL .pdf files (year subfolders OK); NA = start from XML
+XML_DIR    <- file.path(PROJECT_DIR, "01_Article_Text")  # 01: GROBID .tei.xml output
+OUTPUT_DIR <- PROJECT_DIR                                # Ledger, funnel, summary, manifest at the project root
+
+# Per-stage output folders (created on demand) and the standard object filename.
+STAGE_OBJECT <- "articles.rds"
+STAGE_DIRS <- list(
+  crossref = file.path(PROJECT_DIR, "02a_Crossref_Metadata"),  # p2a
+  body     = file.path(PROJECT_DIR, "02b_Body_Text"),          # p2b
+  length   = file.path(PROJECT_DIR, "02c_Length_Screened"),    # p2c
+  content  = file.path(PROJECT_DIR, "02d_Content_Filtered"),   # p2d (stub)
+  truncate = file.path(PROJECT_DIR, "02e_Truncated"),          # p2e (stub)
+  tokens   = file.path(PROJECT_DIR, "03_Token_Profiled")       # p3
+)
 
 # ---- Stage toggles: TRUE = run, FALSE = skip ----
 run_seed_ledger    <- TRUE     # Stage 0:  seed ledger from PDF corpus (needs PDF_DIR)
@@ -95,6 +109,11 @@ run_started_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 
 ledger <- ledger_load(OUTPUT_DIR)   # empty if this is a fresh run, else resumes
 cat(sprintf("\n[LEDGER] Starting with %d existing row(s).\n", nrow(ledger)))
+
+# Pointer to the latest article object as it flows through the stage folders.
+# Each producing stage reads this and updates it (the "baton"), so skipped stub
+# stages never break the chain.
+CURRENT_OBJECT <- NA_character_
 
 # Helper: run a stage script then persist the ledger (crash-safe checkpoint).
 run_stage <- function(label, script, active) {
