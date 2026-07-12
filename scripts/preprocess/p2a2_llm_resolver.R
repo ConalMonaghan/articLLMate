@@ -93,39 +93,56 @@ if (length(residue) == 0) {
     xm0  <- xml_article_meta(doc)
     body <- paste(xml_text(xml_find_all(doc, "//text/body//p")), collapse = " ")
 
-    prompt <- paste0(
-      "Filename (author surname, year, title fragment):\n  ", id, "\n\n",
-      "GROBID header (may be empty/garbled):\n  title: ", xm0$title %||% "",
-      "\n  author: ", xm0$surname %||% "", "\n\n",
-      "Article body opening:\n", substr(body, 1, 4000), "\n\n",
-      "Give the article's true full title, first-author surname, four-digit year, and journal.")
-
-    out <- tryCatch(chat_anthropic(system_prompt = sys_prompt,
-                                   model = if (exists("llm_model")) llm_model else NULL
-                    )$chat_structured(prompt, type = spec),
-                    error = function(e) NULL)
-
-    # Anchor verification to the reliable filename surname/year.
-    xm_llm <- list(
-      title   = if (!is.null(out) && nzchar(out$title)) out$title else strip_supp_title(xm0$title),
-      surname = if (!is.null(out) && nzchar(out$first_author)) out$first_author else surname_from_id(id),
-      year    = if (!is.null(out) && nzchar(out$year)) out$year else year_from_id(id),
-      journal = if (!is.null(out) && nzchar(out$journal)) out$journal else NA_character_
-    )
-    # Fall back to the filename surname/year for verification anchors if needed.
-    if (!nzchar(xm_llm$surname %||% "")) xm_llm$surname <- surname_from_id(id)
-    if (!nzchar(xm_llm$year %||% ""))    xm_llm$year <- year_from_id(id)
+    # Filename gives reliable anchors (surname + year) for verifying the residue.
+    xm_anchor <- list(title = strip_supp_title(xm0$title %||% ""),
+                      surname = surname_from_id(id), year = year_from_id(id),
+                      journal = xm0$journal %||% NA_character_)
 
     resolved_doi <- NA_character_; meta <- list(); ok <- FALSE
-    if (nzchar(canon(xm_llm$title))) {
-      cand <- tryCatch(suppressWarnings(
-        cr_works(flq = c(`query.bibliographic` = xm_llm$title,
-                         `query.author` = xm_llm$surname %||% ""), limit = 5)$data),
-        error = function(e) NULL)
-      if (!is.null(cand) && nrow(cand) > 0) {
-        for (i in seq_len(nrow(cand))) {
-          if (verified_bib(cr_verify(xm_llm, cand[i, ]))) {
-            resolved_doi <- cand$doi[i]; meta <- cand[i, ]; ok <- TRUE; break
+    method_used <- NA_character_; out <- NULL
+
+    # --- Attempt A: repair the corrupted DOI and anchor-verify (NO LLM call) ---
+    raw_doi <- xm0$doi
+    if (!is.na(raw_doi) && nzchar(raw_doi)) {
+      for (cd in unique(c(normalize_doi(raw_doi), doi_repair_candidates(raw_doi)))) {
+        d <- tryCatch(suppressWarnings(cr_works(cd)$data), error = function(e) NULL)
+        if (!is.null(d) && nrow(d) > 0 && verified_anchor(cr_verify(xm_anchor, d))) {
+          resolved_doi <- d$doi[1]; meta <- d; ok <- TRUE; method_used <- "doi_regex_fixed"; break
+        }
+      }
+    }
+
+    # --- Attempt B: Claude reconstructs metadata -> Crossref search (only if A failed) ---
+    if (!ok) {
+      prompt <- paste0(
+        "Filename (author surname, year, title fragment):\n  ", id, "\n\n",
+        "GROBID header (may be empty/garbled):\n  title: ", xm0$title %||% "",
+        "\n  author: ", xm0$surname %||% "", "\n\n",
+        "Article body opening:\n", substr(body, 1, 4000), "\n\n",
+        "Give the article's true full title, first-author surname, four-digit year, and journal.")
+      out <- tryCatch(chat_anthropic(system_prompt = sys_prompt,
+                                     model = if (exists("llm_model")) llm_model else NULL
+                      )$chat_structured(prompt, type = spec),
+                      error = function(e) NULL)
+      xm_llm <- list(
+        title   = if (!is.null(out) && nzchar(out$title)) out$title else xm_anchor$title,
+        surname = if (!is.null(out) && nzchar(out$first_author)) out$first_author else xm_anchor$surname,
+        year    = if (!is.null(out) && nzchar(out$year)) out$year else xm_anchor$year,
+        journal = if (!is.null(out) && nzchar(out$journal)) out$journal else NA_character_
+      )
+      if (!nzchar(xm_llm$surname %||% "")) xm_llm$surname <- xm_anchor$surname
+      if (!nzchar(xm_llm$year %||% ""))    xm_llm$year <- xm_anchor$year
+
+      if (nzchar(canon(xm_llm$title))) {
+        cand <- tryCatch(suppressWarnings(
+          cr_works(flq = c(`query.bibliographic` = xm_llm$title,
+                           `query.author` = xm_llm$surname %||% ""), limit = 5)$data),
+          error = function(e) NULL)
+        if (!is.null(cand) && nrow(cand) > 0) {
+          for (i in seq_len(nrow(cand))) {
+            if (verified_bib(cr_verify(xm_llm, cand[i, ]))) {
+              resolved_doi <- cand$doi[i]; meta <- cand[i, ]; ok <- TRUE; method_used <- "llm_resolved"; break
+            }
           }
         }
       }
@@ -135,12 +152,14 @@ if (length(residue) == 0) {
       temp_db[[id]]$META <- meta
       temp_db[[id]]$RESOLVED_DOI <- resolved_doi
       log_df$doi_resolved[log_df$article_id == id]      <- resolved_doi
-      log_df$resolution_method[log_df$article_id == id] <- "llm_resolved"
+      log_df$resolution_method[log_df$article_id == id] <- method_used
       log_df$verified[log_df$article_id == id]          <- TRUE
       log_df$needs_review[log_df$article_id == id]       <- FALSE
     }
     llm_rows[[id]] <- tibble(
-      article_id = id, llm_title = out$title %||% NA, llm_author = out$first_author %||% NA,
+      article_id = id, method = method_used %||% "unresolved",
+      used_llm = !is.null(out),
+      llm_title = out$title %||% NA, llm_author = out$first_author %||% NA,
       llm_year = out$year %||% NA, llm_journal = out$journal %||% NA,
       resolved_doi = resolved_doi, verified = ok)
     setTxtProgressBar(pb, j)
@@ -151,14 +170,19 @@ if (length(residue) == 0) {
   write_csv(log_df, log_path)
   write_csv(bind_rows(llm_rows), llm_log_path)
 
-  # Fold newly resolved rows into the ledger.
-  newly <- log_df |> filter(resolution_method == "llm_resolved") |>
+  # Fold rows resolved in this stage (regex-anchored or LLM) into the ledger.
+  newly <- log_df |> filter(resolution_method %in% c("llm_resolved", "doi_regex_fixed"),
+                            article_id %in% residue) |>
     transmute(article_id, crossref_doi = doi_resolved, meta_found = TRUE,
               resolution_method, verified = TRUE, needs_review = FALSE)
   if (nrow(newly) > 0) ledger <- ledger_upsert(ledger, newly, stage = "p2a2_llm_resolver")
 
-  n_ok <- sum(vapply(llm_rows, function(x) isTRUE(x$verified), logical(1)))
-  cat(sprintf("\n  [OK] LLM resolved %d / %d residue article(s).\n", n_ok, length(residue)))
+  llm_tbl <- bind_rows(llm_rows)
+  n_ok    <- sum(llm_tbl$verified)
+  n_llm   <- sum(llm_tbl$verified & llm_tbl$method == "llm_resolved")
+  n_regex <- sum(llm_tbl$verified & llm_tbl$method == "doi_regex_fixed")
+  cat(sprintf("\n  [OK] Residue resolved: %d / %d  (regex %d, claude %d; LLM calls made: %d)\n",
+              n_ok, length(residue), n_regex, n_llm, sum(llm_tbl$used_llm)))
   cat(sprintf("  [OK] LLM log: %s\n", llm_log_path))
 }
 

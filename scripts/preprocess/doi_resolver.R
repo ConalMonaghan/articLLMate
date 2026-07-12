@@ -137,6 +137,16 @@ verified_bib <- function(vr) {
     (isTRUE(vr$year_ok) || isTRUE(vr$journal_ok)) && no_contradiction
 }
 
+# DOI-anchored path (residue only): a DOI is a strong identifier, so accept when
+# first-author surname AND year match (both reliably read from the filename) and
+# no present field contradicts. Used to rescue OCR-corrupted DOIs whose garbled
+# headers defeat the strict/bibliographic checks.
+verified_anchor <- function(vr) {
+  fields <- vr[c("title_ok","author_ok","year_ok","journal_ok")]
+  no_contradiction <- !any(vapply(fields, function(x) isFALSE(x), logical(1)))
+  isTRUE(vr$author_ok) && isTRUE(vr$year_ok) && no_contradiction
+}
+
 # ------------------------------------------------------------------------------
 # resolve_article(): resolve + verify one article's DOI/metadata.
 # Returns a one-row list: the DOI-log fields plus the accepted Crossref META.

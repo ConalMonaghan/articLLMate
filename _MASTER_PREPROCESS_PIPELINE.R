@@ -28,10 +28,24 @@
 # AUTHOR: Dr Conal Monaghan (+ articLLMate Logging branch)
 # ==============================================================================
 
-library(here)
-library(tibble)
-library(dplyr)
-library(readr)
+# ---- Ensure every package the pre-processing pipeline needs is present -------
+# Checked once here so no stage fails midway with a missing dependency. The
+# token stage additionally needs a conda env with `tiktoken` (see env_name).
+.required_pkgs <- c(
+  "here", "tibble", "dplyr", "readr",   # infrastructure / ledger / summaries
+  "xml2", "purrr",                       # XML parsing, iteration
+  "rcrossref",                            # Crossref metadata (Stage 2a)
+  "ellmer",                               # Claude API DOI resolver (Stage 2a2)
+  "reticulate",                           # tiktoken bridge (Stage 3)
+  "jsonlite"                              # run manifest
+)
+.missing <- .required_pkgs[!vapply(.required_pkgs, requireNamespace,
+                                    logical(1), quietly = TRUE)]
+if (length(.missing) > 0) {
+  message("Installing missing packages: ", paste(.missing, collapse = ", "))
+  install.packages(.missing)
+}
+invisible(lapply(.required_pkgs, library, character.only = TRUE))
 
 # ==============================================================================
 # USER CONFIGURATION - Edit these before each run
