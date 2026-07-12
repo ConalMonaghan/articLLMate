@@ -192,6 +192,10 @@ if (length(residue) == 0) {
   }
   close(pb)
 
+  # Anything still unresolved after every automated attempt is a human's job.
+  log_df$resolution_method[log_df$needs_review &
+                           log_df$resolution_method == "unresolved"] <- "manual_resolve"
+
   saveRDS(temp_db, db_path)
   write_csv(log_df, log_path)
   write_csv(bind_rows(llm_rows), llm_log_path)

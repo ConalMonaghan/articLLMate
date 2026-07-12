@@ -164,10 +164,12 @@ surname_from_id <- function(id) trimws(sub("\\s*\\(.*$", "", id))
 
 # Map resolution_method values to the pipeline STEP that resolved them, and count.
 # This is the per-step DOI resolution tally (crossref / regex / claude / ...).
+# Terminal status for articles that exhausted every automated attempt
+# (Crossref, regex, Claude, web search) and need a human: "manual_resolve".
 RESOLUTION_STEP <- c(
   doi_verified   = "crossref", doi_supp_fixed = "crossref", bibliographic = "crossref",
   doi_regex_fixed = "regex",   llm_resolved   = "claude", llm_web_search = "claude",
-  unresolved     = "unresolved", parse_error  = "unresolved"
+  manual_resolve = "manual_resolve", unresolved = "manual_resolve", parse_error = "manual_resolve"
 )
 doi_resolution_summary <- function(log_df) {
   library(dplyr)
