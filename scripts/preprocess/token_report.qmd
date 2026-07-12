@@ -1,0 +1,118 @@
+---
+title: "Token Usage & Cost Estimate"
+date: today
+format: gfm
+execute:
+  echo: false
+  warning: false
+params:
+  token_csv: "token_counts.csv"
+  encoding: "cl100k_base"
+  project: ""
+  cost_in_per_million: 1.5
+  cost_out_per_million: 9.0
+  assumed_output_tokens: 7000
+  batch_discount: 0.5
+---
+
+```{r}
+#| label: setup
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+counts <- read_csv(params$token_csv, show_col_types = FALSE)
+
+n_articles <- nrow(counts)
+total_in   <- sum(counts$n_tokens_in)
+out_each   <- params$assumed_output_tokens
+cost_in    <- params$cost_in_per_million
+cost_out   <- params$cost_out_per_million
+
+# Fixed input cost; output cost scales with the (uncertain) output assumption.
+bd            <- params$batch_discount
+cost_in_total <- total_in / 1e6 * cost_in
+scenario <- tibble(
+  Scenario         = c("Low (0.5x)", "Expected", "High (1.5x)"),
+  `Output/article` = round(out_each * c(0.5, 1, 1.5)),
+  `Output cost`    = (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out,
+  `Input cost`     = cost_in_total,
+  `Total`          = cost_in_total + (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out
+) |>
+  mutate(`Batch total` = `Total` * bd)
+```
+
+`r if (nzchar(params$project)) paste0("**Project:** ", params$project, "  ")`
+**Articles:** `r comma(n_articles)` &nbsp;|&nbsp; **Encoding:** `r params$encoding` &nbsp;|&nbsp;
+**Prices:** $`r sprintf("%.2f", cost_in)`/M in, $`r sprintf("%.2f", cost_out)`/M out &nbsp;|&nbsp;
+**Assumed output:** `r comma(out_each)` tokens/article
+
+## Token distribution
+
+```{r}
+#| label: fig-density
+#| fig-cap: "Density of INPUT tokens per article. Dashed lines mark common context-window sizes."
+#| fig-width: 9
+#| fig-height: 5
+ctx <- c(4096, 8192, 16384, 32768, 65536)
+ggplot(counts, aes(x = n_tokens_in)) +
+  geom_density(fill = "#4A90D9", alpha = 0.6, colour = "#2C5F8A") +
+  geom_vline(xintercept = ctx, linetype = "dashed", colour = "red", alpha = 0.5) +
+  annotate("text", x = ctx, y = Inf, label = paste0(ctx / 1024, "K"),
+           vjust = 1.5, hjust = -0.15, size = 3, colour = "red") +
+  scale_x_continuous(labels = comma) +
+  labs(x = "Input tokens per article", y = "Density") +
+  theme_minimal(base_size = 12)
+```
+
+```{r}
+#| label: tbl-summary
+q <- quantile(counts$n_tokens_in, c(0.5, 0.9, 0.95, 0.99))
+knitr::kable(
+  tibble(
+    Metric = c("Total input tokens", "Mean", "Median", "90th pct", "95th pct", "99th pct", "Max"),
+    Value  = comma(round(c(total_in, mean(counts$n_tokens_in), q[1], q[2], q[3], q[4],
+                           max(counts$n_tokens_in))))
+  ),
+  caption = "Input-token summary."
+)
+```
+
+## Estimated cost
+
+Input tokens are measured, so the **input cost is fixed**. Output tokens are an
+assumption, so the range below flexes the assumed output per article from 0.5x
+to 1.5x of `r comma(out_each)`.
+
+```{r}
+#| label: tbl-cost
+knitr::kable(
+  scenario |>
+    mutate(across(c(`Output cost`, `Input cost`, `Total`, `Batch total`), ~ dollar(.x, accuracy = 0.01))),
+  align = "lrrrrr",
+  caption = sprintf("Estimated cost by output-token assumption (batch = %.0f%% off).", (1 - bd) * 100)
+)
+```
+
+::: {.callout-note}
+Expected total: **`r dollar(scenario$Total[2], accuracy = 0.01)` standard**
+/ **`r dollar(scenario$"Batch total"[2], accuracy = 0.01)` batch**
+(standard range `r dollar(scenario$Total[1], accuracy = 0.01)` –
+`r dollar(scenario$Total[3], accuracy = 0.01)`).
+Per-article expected cost: median
+**`r dollar(median(counts$cost_total_usd), accuracy = 0.0001)`**,
+max `r dollar(max(counts$cost_total_usd), accuracy = 0.0001)`.
+:::
+
+```{r}
+#| label: fig-cost-density
+#| fig-cap: "Density of estimated per-article cost (at the expected output assumption)."
+#| fig-width: 9
+#| fig-height: 4
+ggplot(counts, aes(x = cost_total_usd)) +
+  geom_density(fill = "#5CB85C", alpha = 0.6, colour = "#3D8B3D") +
+  scale_x_continuous(labels = dollar_format(accuracy = 0.001)) +
+  labs(x = "Estimated cost per article (USD)", y = "Density") +
+  theme_minimal(base_size = 12)
+```

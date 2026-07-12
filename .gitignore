@@ -24,6 +24,10 @@ output/
 # Ignore the whole tree so numbered stage folders (01_, 02_, ...) never go live.
 input/
 
+# Project-specific built prompts (embed article-derived text). Keep the public
+# top-level template ("prompts/Prompt Template"); ignore per-project subfolders.
+prompts/*/
+
 # Service account keys
 keys/
 

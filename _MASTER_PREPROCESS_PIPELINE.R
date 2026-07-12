@@ -37,7 +37,8 @@
   "rcrossref",                            # Crossref metadata (Stage 2a)
   "ellmer",                               # Claude API DOI resolver (Stage 2a2)
   "reticulate",                           # tiktoken bridge (Stage 3)
-  "jsonlite"                              # run manifest
+  "jsonlite",                             # run manifest
+  "ggplot2", "scales", "quarto"           # Stage 3 token cost report
 )
 .missing <- .required_pkgs[!vapply(.required_pkgs, requireNamespace,
                                     logical(1), quietly = TRUE)]
@@ -95,6 +96,13 @@ llm_web_search     <- FALSE     # Stage 2a2: let Claude web-search for the last 
 MIN_WORDS          <- 500        # Stage 2c: exclude articles shorter than this
 MAX_WORDS          <- 30000      # Stage 2c: exclude articles longer than this
 token_encoding     <- "cl100k_base"   # Stage 3: tiktoken encoding
+
+# ---- Cost estimation (Stage 3 report). Prices are USD per 1,000,000 tokens. ----
+cost_in_per_million   <- 1.50     # INPUT token price per 1M  (e.g. Gemini 3.5 Flash = $1.50)
+cost_out_per_million  <- 9.00     # OUTPUT token price per 1M (e.g. Gemini 3.5 Flash = $9.00)
+assumed_output_tokens <- 7000     # Assumed OUTPUT tokens per article (rough; tweak after a real run)
+batch_discount        <- 0.50     # Fraction of price paid in batch mode (0.50 = 50% off; 1.0 = standard)
+render_quarto         <- FALSE    # Also render the richer token_report.qmd (needs a working Quarto/deno)
 
 # ==============================================================================
 # PIPELINE
