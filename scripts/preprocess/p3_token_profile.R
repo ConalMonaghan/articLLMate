@@ -87,15 +87,21 @@ ledger <- ledger_upsert(ledger, tibble(article_id = keys, n_tokens = as.integer(
 total_in  <- sum(counts$n_tokens_in)
 cost_in_t <- sum(counts$cost_in_usd)
 # Range driven by the (uncertain) output-token assumption: 0.5x / 1x / 1.5x.
-mults <- c(low = 0.5, expected = 1.0, high = 1.5)
+mults  <- c(low = 0.5, expected = 1.0, high = 1.5)
 totals <- cost_in_t + (n * out_tok * mults) / 1e6 * cost_out
+bd     <- batch_discount %||% 1                     # e.g. 0.5 = 50% off in batch mode
+totals_batch <- totals * bd
 
 cat(sprintf("\n  [SUMMARY] Input tokens: %s  |  Assumed output: %s/article\n",
             formatC(total_in, format = "d", big.mark = ","),
             formatC(out_tok,  format = "d", big.mark = ",")))
 cat(sprintf("  Prices: $%.2f/M in, $%.2f/M out\n", cost_in, cost_out))
-cat(sprintf("  Estimated total cost: $%.2f  (range $%.2f – $%.2f at 0.5x–1.5x output)\n",
+cat(sprintf("  Standard total: $%.2f  (range $%.2f – $%.2f at 0.5x–1.5x output)\n",
             totals[["expected"]], totals[["low"]], totals[["high"]]))
+if (bd != 1) {
+  cat(sprintf("  Batch total (%.0f%% off): $%.2f  (range $%.2f – $%.2f)\n",
+              (1 - bd) * 100, totals_batch[["expected"]], totals_batch[["low"]], totals_batch[["high"]]))
+}
 
 ctx_sizes <- c(4096, 8192, 16384, 32768, 65536)
 cat("  Context-window fit:\n")
@@ -140,15 +146,16 @@ md <- c(
   sprintf("| 99th percentile | %s |", comma(round(qs[3]))),
   sprintf("| Max | %s |", comma(max(counts$n_tokens_in))),
   "", "## Estimated cost", "",
-  "Input tokens are measured (input cost is fixed); output tokens are assumed, so the range flexes the assumption from 0.5x to 1.5x.",
-  "", "| Scenario | Output/article | Output cost | Input cost | Total |",
-  "|---|---|---|---|---|",
-  sprintf("| Low (0.5x) | %s | %s | %s | %s |", comma(round(out_tok*0.5)), usd((n*out_tok*0.5)/1e6*cost_out), usd(cost_in_t), usd(totals[["low"]])),
-  sprintf("| Expected | %s | %s | %s | %s |", comma(out_tok), usd((n*out_tok)/1e6*cost_out), usd(cost_in_t), usd(totals[["expected"]])),
-  sprintf("| High (1.5x) | %s | %s | %s | %s |", comma(round(out_tok*1.5)), usd((n*out_tok*1.5)/1e6*cost_out), usd(cost_in_t), usd(totals[["high"]])),
+  sprintf("Input tokens are measured (input cost is fixed); output tokens are assumed, so the range flexes the assumption from 0.5x to 1.5x. Batch total = %.0f%% off standard.",
+          (1 - bd) * 100),
+  "", "| Scenario | Output/article | Output cost | Input cost | Standard total | Batch total |",
+  "|---|---|---|---|---|---|",
+  sprintf("| Low (0.5x) | %s | %s | %s | %s | %s |", comma(round(out_tok*0.5)), usd((n*out_tok*0.5)/1e6*cost_out), usd(cost_in_t), usd(totals[["low"]]),      usd(totals_batch[["low"]])),
+  sprintf("| Expected | %s | %s | %s | %s | %s |",   comma(out_tok),           usd((n*out_tok)/1e6*cost_out),     usd(cost_in_t), usd(totals[["expected"]]), usd(totals_batch[["expected"]])),
+  sprintf("| High (1.5x) | %s | %s | %s | %s | %s |", comma(round(out_tok*1.5)), usd((n*out_tok*1.5)/1e6*cost_out), usd(cost_in_t), usd(totals[["high"]]),     usd(totals_batch[["high"]])),
   "",
-  sprintf("**Expected total: %s** (range %s – %s). Per-article median %s, max %s.",
-          usd(totals[["expected"]]), usd(totals[["low"]]), usd(totals[["high"]]),
+  sprintf("**Expected total: %s standard / %s batch** (standard range %s – %s). Per-article median %s, max %s.",
+          usd(totals[["expected"]]), usd(totals_batch[["expected"]]), usd(totals[["low"]]), usd(totals[["high"]]),
           usd(median(counts$cost_total_usd)), usd(max(counts$cost_total_usd)))
 )
 writeLines(md, file.path(stage_dir, "token_report.md"))
@@ -163,7 +170,8 @@ if (isTRUE(get0("render_quarto", ifnotfound = FALSE))) {
       input = file.path(stage_dir, "token_report.qmd"),
       execute_params = list(token_csv = "token_counts.csv", encoding = token_encoding %||% "cl100k_base",
                             project = project_name %||% "", cost_in_per_million = cost_in,
-                            cost_out_per_million = cost_out, assumed_output_tokens = out_tok),
+                            cost_out_per_million = cost_out, assumed_output_tokens = out_tok,
+                            batch_discount = bd),
       quiet = TRUE),
       error = function(e) message("  [WARN] Quarto render skipped: ", conditionMessage(e)))
   }

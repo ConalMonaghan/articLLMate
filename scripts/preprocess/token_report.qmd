@@ -9,9 +9,10 @@ params:
   token_csv: "token_counts.csv"
   encoding: "cl100k_base"
   project: ""
-  cost_in_per_million: 3.0
-  cost_out_per_million: 15.0
+  cost_in_per_million: 1.5
+  cost_out_per_million: 9.0
   assumed_output_tokens: 7000
+  batch_discount: 0.5
 ---
 
 ```{r}
@@ -30,14 +31,16 @@ cost_in    <- params$cost_in_per_million
 cost_out   <- params$cost_out_per_million
 
 # Fixed input cost; output cost scales with the (uncertain) output assumption.
+bd            <- params$batch_discount
 cost_in_total <- total_in / 1e6 * cost_in
 scenario <- tibble(
-  Scenario       = c("Low (0.5x)", "Expected", "High (1.5x)"),
+  Scenario         = c("Low (0.5x)", "Expected", "High (1.5x)"),
   `Output/article` = round(out_each * c(0.5, 1, 1.5)),
-  `Output cost`  = (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out,
-  `Input cost`   = cost_in_total,
-  `Total`        = cost_in_total + (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out
-)
+  `Output cost`    = (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out,
+  `Input cost`     = cost_in_total,
+  `Total`          = cost_in_total + (n_articles * out_each * c(0.5, 1, 1.5)) / 1e6 * cost_out
+) |>
+  mutate(`Batch total` = `Total` * bd)
 ```
 
 `r if (nzchar(params$project)) paste0("**Project:** ", params$project, "  ")`
@@ -86,15 +89,16 @@ to 1.5x of `r comma(out_each)`.
 #| label: tbl-cost
 knitr::kable(
   scenario |>
-    mutate(across(c(`Output cost`, `Input cost`, `Total`), ~ dollar(.x, accuracy = 0.01))),
-  align = "lrrrr",
-  caption = "Estimated cost by output-token assumption."
+    mutate(across(c(`Output cost`, `Input cost`, `Total`, `Batch total`), ~ dollar(.x, accuracy = 0.01))),
+  align = "lrrrrr",
+  caption = sprintf("Estimated cost by output-token assumption (batch = %.0f%% off).", (1 - bd) * 100)
 )
 ```
 
 ::: {.callout-note}
-Expected total: **`r dollar(scenario$Total[2], accuracy = 0.01)`**
-(range `r dollar(scenario$Total[1], accuracy = 0.01)` –
+Expected total: **`r dollar(scenario$Total[2], accuracy = 0.01)` standard**
+/ **`r dollar(scenario$"Batch total"[2], accuracy = 0.01)` batch**
+(standard range `r dollar(scenario$Total[1], accuracy = 0.01)` –
 `r dollar(scenario$Total[3], accuracy = 0.01)`).
 Per-article expected cost: median
 **`r dollar(median(counts$cost_total_usd), accuracy = 0.0001)`**,

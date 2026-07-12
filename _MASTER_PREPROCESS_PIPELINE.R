@@ -98,9 +98,10 @@ MAX_WORDS          <- 30000      # Stage 2c: exclude articles longer than this
 token_encoding     <- "cl100k_base"   # Stage 3: tiktoken encoding
 
 # ---- Cost estimation (Stage 3 report). Prices are USD per 1,000,000 tokens. ----
-cost_in_per_million   <- 3.00     # INPUT token price  — SET to your analysis model's pricing
-cost_out_per_million  <- 15.00    # OUTPUT token price — SET to your analysis model's pricing
+cost_in_per_million   <- 1.50     # INPUT token price per 1M  (e.g. Gemini 3.5 Flash = $1.50)
+cost_out_per_million  <- 9.00     # OUTPUT token price per 1M (e.g. Gemini 3.5 Flash = $9.00)
 assumed_output_tokens <- 7000     # Assumed OUTPUT tokens per article (rough; tweak after a real run)
+batch_discount        <- 0.50     # Fraction of price paid in batch mode (0.50 = 50% off; 1.0 = standard)
 render_quarto         <- FALSE    # Also render the richer token_report.qmd (needs a working Quarto/deno)
 
 # ==============================================================================
