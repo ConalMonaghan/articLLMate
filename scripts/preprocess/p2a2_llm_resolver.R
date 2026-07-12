@@ -148,6 +148,32 @@ if (length(residue) == 0) {
       }
     }
 
+    # --- Attempt C: Claude web search (opt-in) — only if A & B failed ---------
+    if (!ok && exists("llm_web_search") && isTRUE(llm_web_search)) {
+      ws <- chat_anthropic(
+        system_prompt = paste("Find the DOI of the described journal article using web search.",
+                              "Reply with ONLY the DOI (format 10.xxxx/...) or the word NONE."),
+        model = if (exists("llm_model")) llm_model else NULL)
+      ws$register_tool(claude_tool_web_search())
+      qtext <- paste0(
+        "Filename: ", id,
+        "\nBest-known title: ", (if (exists("xm_llm")) xm_llm$title else xm_anchor$title) %||% "",
+        "\nFirst author: ", xm_anchor$surname, " | Year: ", xm_anchor$year,
+        "\nOpening text: ", substr(body, 1, 1200),
+        "\n\nSearch the web and reply with ONLY the article's DOI, or NONE.")
+      resp <- tryCatch(ws$chat(qtext, echo = "none"), error = function(e) NULL)
+      if (!is.null(resp)) {
+        hits <- regmatches(resp, gregexpr("10\\.\\d{4,9}/[^\\s\"'<>)\\]]+", resp, perl = TRUE))[[1]]
+        hits <- unique(sub("[.,;]+$", "", hits))
+        for (dg in hits) {
+          d <- tryCatch(suppressWarnings(cr_works(dg)$data), error = function(e) NULL)
+          if (!is.null(d) && nrow(d) > 0 && verified_anchor(cr_verify(xm_anchor, d))) {
+            resolved_doi <- d$doi[1]; meta <- d; ok <- TRUE; method_used <- "llm_web_search"; break
+          }
+        }
+      }
+    }
+
     if (ok) {
       temp_db[[id]]$META <- meta
       temp_db[[id]]$RESOLVED_DOI <- resolved_doi

@@ -91,6 +91,7 @@ run_token_profile  <- TRUE     # Stage 3:  token usage prediction
 # ---- Levers ----
 crossref_email     <- Sys.getenv("CROSSREF_EMAIL", unset = "your.email@example.com")
 autosave_frequency <- 100        # Checkpoint the metadata .rds every N files (stage 2a)
+llm_web_search     <- FALSE      # Stage 2a2: let Claude web-search for the last unresolved DOIs (costs tokens; opt-in)
 MIN_WORDS          <- 500        # Stage 2c: exclude articles shorter than this
 MAX_WORDS          <- 30000      # Stage 2c: exclude articles longer than this
 token_encoding     <- "cl100k_base"   # Stage 3: tiktoken encoding

@@ -166,7 +166,7 @@ surname_from_id <- function(id) trimws(sub("\\s*\\(.*$", "", id))
 # This is the per-step DOI resolution tally (crossref / regex / claude / ...).
 RESOLUTION_STEP <- c(
   doi_verified   = "crossref", doi_supp_fixed = "crossref", bibliographic = "crossref",
-  doi_regex_fixed = "regex",   llm_resolved   = "claude",
+  doi_regex_fixed = "regex",   llm_resolved   = "claude", llm_web_search = "claude",
   unresolved     = "unresolved", parse_error  = "unresolved"
 )
 doi_resolution_summary <- function(log_df) {
