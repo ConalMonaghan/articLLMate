@@ -26,10 +26,12 @@ library(tibble)
 # metadata are informational (a missing DOI does not by itself exclude an
 # article), so they are reported separately below rather than as funnel steps.
 build_funnel <- function(ledger) {
-  n_start   <- nrow(ledger)
-  n_xml     <- sum(isTRUE_vec(ledger$xml_created))
-  n_parsed  <- sum(isTRUE_vec(ledger$xml_created) & isTRUE_vec(ledger$parse_ok))
-  n_length  <- sum(ledger$length_status == "kept", na.rm = TRUE)
+  # Cumulative gates. A gate that did not run leaves its column all-NA; we treat
+  # NA as "not excluded" so a skipped stage passes everyone through rather than
+  # appearing to drop the whole corpus.
+  in_xml    <- isTRUE_vec(ledger$xml_created)
+  in_parse  <- in_xml   & !(ledger$parse_ok %in% FALSE)
+  in_length <- in_parse & !(ledger$length_status %in% c("too_short", "too_long"))
   n_incl    <- sum(ledger$final_status == "included", na.rm = TRUE)
 
   stages <- c(
@@ -39,7 +41,7 @@ build_funnel <- function(ledger) {
     "3. Within length bounds",
     "4. Final included"
   )
-  counts <- c(n_start, n_xml, n_parsed, n_length, n_incl)
+  counts <- c(nrow(ledger), sum(in_xml), sum(in_parse), sum(in_length), n_incl)
 
   tibble(
     stage   = stages,
@@ -55,7 +57,7 @@ has_doi   <- !is.na(ledger$extracted_doi) & nzchar(ledger$extracted_doi)
 info_lines <- c(
   sprintf("  DOI detected:            %6d", sum(has_doi)),
   sprintf("  Crossref metadata found: %6d", sum(isTRUE_vec(ledger$meta_found))),
-  sprintf("  DOI mismatches:          %6d", sum(ledger$doi_match == FALSE, na.rm = TRUE))
+  sprintf("  DOI corrected (raw!=final):%5d", sum(ledger$doi_match == FALSE, na.rm = TRUE))
 )
 
 if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
@@ -80,6 +82,15 @@ for (r in seq_len(nrow(funnel))) {
   drop_str <- if (is.na(funnel$dropped[r])) "" else sprintf("   (-%d)", funnel$dropped[r])
   lines <- c(lines, sprintf("  %-38s %6d%s", funnel$stage[r], funnel$n[r], drop_str))
 }
+# Flag gates that did not run, so a pass-through count isn't mistaken for a pass.
+skipped <- c()
+if (all(is.na(ledger$length_status)))  skipped <- c(skipped, "length filter")
+if (all(is.na(ledger$parse_ok)))       skipped <- c(skipped, "body extraction")
+if (length(skipped) > 0) {
+  lines <- c(lines, sprintf("  (note: %s did not run — its gate passes all through)",
+                            paste(skipped, collapse = ", ")))
+}
+
 lines <- c(lines, "", "--- Metadata (informational) ---", info_lines)
 
 # ---- DOI resolution per step (crossref / regex / claude / unresolved) --------
