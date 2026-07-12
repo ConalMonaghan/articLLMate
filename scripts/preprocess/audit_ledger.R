@@ -53,11 +53,14 @@ LEDGER_SCHEMA <- list(
   xml_created      = NA,              # logical
   grobid_status    = NA_character_,   # "ok" | "failed" | "no_pdf"
 
-  # Stage 2a: DOI detection + Crossref metadata
-  extracted_doi    = NA_character_,
-  crossref_doi     = NA_character_,
-  doi_match        = NA,              # logical: extracted vs crossref agree
-  meta_found       = NA,              # logical
+  # Stage 2a: DOI detection + Crossref metadata (via the DOI resolver)
+  extracted_doi     = NA_character_,  # raw DOI GROBID pulled from the XML header
+  crossref_doi      = NA_character_,  # accepted/verified article DOI
+  doi_match         = NA,             # logical: raw == accepted (FALSE when fixed)
+  meta_found        = NA,             # logical: verified metadata attached
+  resolution_method = NA_character_,  # doi_verified | doi_supp_fixed | bibliographic | unresolved | parse_error
+  verified          = NA,             # logical: passed the exact-match verifier
+  needs_review      = NA,             # logical: could not be verified
 
   # Stage 2b: body extraction
   parse_ok         = NA,              # logical
